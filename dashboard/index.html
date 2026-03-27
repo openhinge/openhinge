@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenHinge</title>
+  <link rel="stylesheet" href="style.css?v=20">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div id="app">
+    <!-- Sidebar -->
+    <aside id="sidebar">
+      <div class="sidebar-header">
+        <div class="logo-mark">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="7" height="7" rx="2" fill="currentColor" opacity="0.9"/><rect x="14" y="3" width="7" height="7" rx="2" fill="currentColor" opacity="0.5"/><rect x="3" y="14" width="7" height="7" rx="2" fill="currentColor" opacity="0.5"/><rect x="14" y="14" width="7" height="7" rx="2" fill="currentColor" opacity="0.3"/></svg>
+        </div>
+        <div>
+          <h1 class="logo-text">OpenHinge</h1>
+          <span class="logo-sub">AI Gateway</span>
+        </div>
+      </div>
+
+      <div class="sidebar-section">
+        <span class="sidebar-label">Overview</span>
+        <nav>
+          <a href="#" data-page="dashboard" class="nav-item active">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+            Dashboard
+          </a>
+<a href="#" data-page="logs" class="nav-item">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+            Request Logs
+          </a>
+        </nav>
+      </div>
+
+      <div class="sidebar-section">
+        <span class="sidebar-label">Configuration</span>
+        <nav>
+          <a href="#" data-page="providers" class="nav-item">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+            Providers
+          </a>
+          <a href="#" data-page="souls" class="nav-item">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+            Souls
+          </a>
+          <a href="#" data-page="keys" class="nav-item">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+            API Keys
+          </a>
+        </nav>
+      </div>
+
+      <div class="sidebar-section">
+        <span class="sidebar-label">System</span>
+        <nav>
+          <a href="#" data-page="cloudflare" class="nav-item">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+            Cloudflare
+          </a>
+          <a href="#" data-page="settings" class="nav-item">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            Settings
+          </a>
+          <a href="#" data-page="docs" class="nav-item">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+            Documentation
+          </a>
+        </nav>
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="server-status" id="server-status">
+          <span class="status-dot"></span>
+          <span class="status-text">Connecting...</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main content -->
+    <main id="main">
+      <header id="topbar">
+        <div id="page-title">Dashboard</div>
+        <div class="topbar-actions">
+          <code class="endpoint-badge" id="endpoint-url"></code>
+        </div>
+      </header>
+
+      <div id="content">
+        <!-- Dashboard -->
+        <div id="page-dashboard" class="page active"></div>
+        <!-- Providers -->
+        <div id="page-providers" class="page"></div>
+        <!-- Souls -->
+        <div id="page-souls" class="page"></div>
+        <!-- Keys -->
+        <div id="page-keys" class="page"></div>
+        <!-- Logs -->
+        <div id="page-logs" class="page"></div>
+        <!-- Cloudflare -->
+        <div id="page-cloudflare" class="page"></div>
+        <!-- Settings -->
+        <div id="page-settings" class="page"></div>
+        <!-- Docs -->
+        <div id="page-docs" class="page"></div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Modal overlay -->
+  <div id="modal-overlay" class="modal-overlay hidden" onclick="if(event.target===this)OS.closeModal()">
+    <div class="modal" id="modal">
+      <div class="modal-header">
+        <h3 id="modal-title"></h3>
+        <button class="btn-ghost btn-icon" onclick="OS.closeModal()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- Welcome screen -->
+  <div id="welcome-screen" class="welcome-screen hidden">
+    <div class="welcome-card">
+      <div class="welcome-logo">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="7" height="7" rx="2" fill="currentColor" opacity="0.9"/><rect x="14" y="3" width="7" height="7" rx="2" fill="currentColor" opacity="0.5"/><rect x="3" y="14" width="7" height="7" rx="2" fill="currentColor" opacity="0.5"/><rect x="14" y="14" width="7" height="7" rx="2" fill="currentColor" opacity="0.3"/></svg>
+      </div>
+      <h1 class="welcome-title">Welcome to OpenHinge</h1>
+      <p class="welcome-sub">Self-hosted AI gateway for Claude, OpenAI, Gemini &amp; Ollama</p>
+
+      <div id="welcome-login">
+        <label class="welcome-label">Admin Token</label>
+        <div class="welcome-input-row">
+          <input type="password" id="welcome-token" class="welcome-input" placeholder="Paste your admin token" autocomplete="off" spellcheck="false">
+          <button class="btn btn-primary welcome-btn" onclick="OS.welcomeLogin()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          </button>
+        </div>
+        <p id="welcome-error" class="welcome-error hidden"></p>
+        <p class="welcome-hint">Your token was printed in the terminal when you ran <code>npm start</code>. It's also saved in <code>config/openhinge.json</code></p>
+      </div>
+
+      <div id="welcome-setup" class="hidden">
+        <p class="welcome-connected">Connected</p>
+        <div class="welcome-steps">
+          <div class="welcome-step" id="ws-providers">
+            <div class="welcome-step-icon">1</div>
+            <div>
+              <div class="welcome-step-title">Add a Provider</div>
+              <div class="welcome-step-desc">Connect Claude, OpenAI, Gemini, or Ollama</div>
+            </div>
+            <svg class="welcome-step-check" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>
+          </div>
+          <div class="welcome-step" id="ws-souls">
+            <div class="welcome-step-icon">2</div>
+            <div>
+              <div class="welcome-step-title">Create a Soul</div>
+              <div class="welcome-step-desc">AI persona with a system prompt and endpoint</div>
+            </div>
+            <svg class="welcome-step-check" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>
+          </div>
+          <div class="welcome-step" id="ws-keys">
+            <div class="welcome-step-icon">3</div>
+            <div>
+              <div class="welcome-step-title">Generate an API Key</div>
+              <div class="welcome-step-desc">Create an <code>ohk_</code> key for your apps</div>
+            </div>
+            <svg class="welcome-step-check" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>
+          </div>
+        </div>
+        <button class="btn btn-primary welcome-go" onclick="OS.welcomeGo()">Open Dashboard</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast container -->
+  <div id="toasts"></div>
+
+  <script src="app.js?v=20"></script>
+</body>
+</html>

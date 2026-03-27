@@ -1,0 +1,25 @@
+{
+  "server": {
+    "host": "127.0.0.1",
+    "port": 3700
+  },
+  "auth": {
+    "adminToken": "generate-with-openhinge-init"
+  },
+  "encryption": {
+    "key": "generate-with-openhinge-init"
+  },
+  "logging": {
+    "level": "info"
+  },
+  "watchdog": {
+    "enabled": true,
+    "intervalMs": 60000
+  },
+  "queue": {
+    "concurrency": 3
+  },
+  "cron": {
+    "enabled": true
+  }
+}
