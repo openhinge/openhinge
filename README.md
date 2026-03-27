@@ -23,7 +23,7 @@ Use your own subscriptions (Claude Pro, ChatGPT Plus, Gemini) and API keys. Cont
 ## Quick Start
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/openhinge/openhinge/main/install.sh | bash
+curl -fsSL https://openhinge.com/install.sh | bash
 cd ~/openhinge
 npm start
 ```

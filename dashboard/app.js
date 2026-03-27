@@ -836,7 +836,7 @@ const OS = (() => {
             </div>
             <div class="doc-card mt-4">
               <h4>One-liner</h4>
-              <div class="code-block">curl -fsSL https://raw.githubusercontent.com/openhinge/openhinge/main/install.sh | bash
+              <div class="code-block">curl -fsSL https://openhinge.com/install.sh | bash
 cd ~/openhinge
 npm start</div>
             </div>

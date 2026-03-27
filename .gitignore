@@ -9,3 +9,4 @@ data/stderr.log
 config/openhinge.json
 .env
 *.tgz
+.npmrc
