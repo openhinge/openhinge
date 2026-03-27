@@ -21,7 +21,7 @@ export async function systemAdminRoutes(app: FastifyInstance, config: Config): P
       total_requests: totalRequests,
       today_requests: todayRequests,
       memory: {
-        rss: Math.round(process.memoryUsage.rss() / 1024 / 1024),
+        rss: Math.round(process.memoryUsage().rss / 1024 / 1024),
         heap: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
       },
     };

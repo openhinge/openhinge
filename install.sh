@@ -31,10 +31,10 @@ if ! command -v node &>/dev/null; then
 fi
 
 NODE_VERSION=$(node -v | sed 's/v//' | cut -d. -f1)
-if [ "$NODE_VERSION" -lt 24 ] 2>/dev/null; then
-  echo -e "${RED}✗${RESET} Node.js 24+ required (found v$(node -v | sed 's/v//'))"
+if [ "$NODE_VERSION" -lt 18 ] 2>/dev/null; then
+  echo -e "${RED}✗${RESET} Node.js 18+ required (found v$(node -v | sed 's/v//'))"
   echo ""
-  echo "  Upgrade: brew upgrade node / nvm install 24"
+  echo "  Upgrade: brew upgrade node / nvm install 18"
   echo ""
   exit 1
 fi

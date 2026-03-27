@@ -4,11 +4,17 @@
   "description": "Self-hosted AI gateway — multi-provider, multi-tenant, soul-based routing",
   "type": "module",
   "engines": {
-    "node": ">=24.0.0"
+    "node": ">=18.0.0"
   },
   "bin": {
     "openhinge": "./dist/bin/openhinge.js"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/openhinge/openhinge.git"
+  },
+  "homepage": "https://github.com/openhinge/openhinge",
+  "license": "MIT",
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.build.json",
