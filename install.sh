@@ -79,7 +79,11 @@ echo ""
 echo -e "${GREEN}✓${RESET} OpenHinge installed successfully"
 echo ""
 
-# ── Start the server ──────────────────────────────────────────
+# ── Start the server and open browser ─────────────────────────
 echo -e "${CYAN}→${RESET} Starting OpenHinge..."
 echo ""
+
+# Open browser after a short delay (background)
+(sleep 3 && open "http://localhost:3700" 2>/dev/null || xdg-open "http://localhost:3700" 2>/dev/null) &
+
 npm start
