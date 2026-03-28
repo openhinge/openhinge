@@ -79,12 +79,7 @@ echo ""
 echo -e "${GREEN}✓${RESET} OpenHinge installed successfully"
 echo ""
 
-# ── Print next steps ──────────────────────────────────────────
-echo -e "${BOLD}  Get started:${RESET}"
+# ── Start the server ──────────────────────────────────────────
+echo -e "${CYAN}→${RESET} Starting OpenHinge..."
 echo ""
-echo -e "    cd $INSTALL_DIR"
-echo -e "    npm start"
-echo ""
-echo -e "  On first run, your admin token will be printed here."
-echo -e "  Open ${CYAN}http://localhost:3700${RESET} and paste it to log in."
-echo ""
+npm start
