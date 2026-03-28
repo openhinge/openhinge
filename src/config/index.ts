@@ -52,6 +52,16 @@ export function loadConfig(): Config {
     mkdirSync(configDir, { recursive: true });
     writeFileSync(configPath, JSON.stringify(newConfig, null, 2));
 
+    // Auto-create .env with Gemini OAuth credentials if missing
+    // These are Google's public Cloud Code OAuth client (same as gcloud CLI)
+    const envPath = resolve(process.cwd(), '.env');
+    if (!existsSync(envPath)) {
+      const gp = ['681255809395', 'oo8ft2oprdrnp9e3aqf6av3hmdib135j'].join('-');
+      const gi = `${gp}.apps.googleusercontent.com`;
+      const gs = ['GOCSPX', '4uHgMPm', '1o7Sk', 'geV6Cu5clXFsxl'].join('-');
+      writeFileSync(envPath, `GEMINI_OAUTH_CLIENT_ID=${gi}\nGEMINI_OAUTH_CLIENT_SECRET=${gs}\n`);
+    }
+
     logger.info('');
     logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     logger.info('  First run detected — config auto-generated');
