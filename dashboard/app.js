@@ -832,13 +832,12 @@ const OS = (() => {
             <h2>Installation</h2>
             <div class="doc-card">
               <h4>Requirements</h4>
-              <p>Node.js 24+ and npm. No external databases — OpenHinge uses embedded SQLite.</p>
+              <p>Node.js 18+ and npm. No external databases — OpenHinge uses embedded SQLite.</p>
             </div>
             <div class="doc-card mt-4">
               <h4>One-liner</h4>
-              <div class="code-block">curl -fsSL https://openhinge.com/install.sh | bash
-cd ~/openhinge
-npm start</div>
+              <div class="code-block">curl -fsSL https://openhinge.com/install.sh | bash</div>
+              <p class="form-hint" style="margin-top:8px">Installs, builds, starts the server, and opens the dashboard automatically.</p>
             </div>
             <div class="doc-card mt-4">
               <h4>Manual</h4>
@@ -1083,7 +1082,7 @@ LLM Providers
             <div class="code-block">npx tsx bin/openhinge.ts &lt;command&gt;</div>
             <div class="doc-card mt-4">
               <table><thead><tr><th>Command</th><th>Description</th></tr></thead><tbody>
-                <tr><td><code>init</code></td><td>Generate config, admin token, encryption key, and run migrations</td></tr>
+                <tr><td><code>init</code></td><td>Generate config and run migrations (runs automatically on first <code>npm start</code>)</td></tr>
                 <tr><td><code>migrate</code></td><td>Run pending database migrations</td></tr>
                 <tr><td><code>status</code></td><td>Show providers, souls, keys, and request counts</td></tr>
                 <tr><td><code>provider list</code></td><td>List all configured providers</td></tr>

@@ -24,9 +24,9 @@ Use your own subscriptions (Claude Pro, ChatGPT Plus, Gemini) and API keys. Cont
 
 ```bash
 curl -fsSL https://openhinge.com/install.sh | bash
-cd ~/openhinge
-npm start
 ```
+
+That's it. The installer clones, builds, starts the server, and opens the dashboard in your browser. Your admin token is printed in the terminal — paste it in the welcome screen to log in.
 
 Or manually:
 
@@ -37,8 +37,6 @@ npm install
 npm run build
 npm start
 ```
-
-On first run, OpenHinge auto-generates your config and prints your admin token to the terminal. Open `http://localhost:3700` and paste the token to get started.
 
 ## Setup
 
@@ -201,7 +199,7 @@ npx tsx bin/openhinge.ts <command>
 
 | Command | Description |
 |---------|-------------|
-| `init` | Generate config, admin token, encryption key, run migrations |
+| `init` | Generate config and run migrations (automatic on first `npm start`) |
 | `migrate` | Run pending database migrations |
 | `status` | Show providers, souls, keys, request counts |
 | `provider list` | List configured providers |

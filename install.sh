@@ -24,8 +24,8 @@ INSTALL_DIR="${OPENHINGE_DIR:-$HOME/openhinge}"
 if ! command -v node &>/dev/null; then
   echo -e "${RED}✗${RESET} Node.js is not installed."
   echo ""
-  echo "  Install Node.js 24+ from https://nodejs.org"
-  echo "  or use: brew install node / nvm install 24"
+  echo "  Install Node.js 18+ from https://nodejs.org"
+  echo "  or use: brew install node / nvm install 18"
   echo ""
   exit 1
 fi
