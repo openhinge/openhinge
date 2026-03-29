@@ -38,7 +38,9 @@ export class ClaudeProvider extends BaseProvider {
   }
 
   defaultModel(): string {
-    return (this.config.config.default_model as string) || 'claude-sonnet-4-5-20250514';
+    if (this.config.config.default_model) return this.config.config.default_model as string;
+    // Subscription OAuth tokens may not support newest models — use a reliable default
+    return this.isSubscription ? 'claude-haiku-4-5-20251001' : 'claude-sonnet-4-6';
   }
 
   // OAuth refresh using refresh_token — works on any platform
