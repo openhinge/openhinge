@@ -884,7 +884,7 @@ cd openhinge
 npm install
 npm run build
 npm start</div>
-              <p class="form-hint" style="margin-top:8px">On first run, OpenHinge auto-generates your config and prints your admin token to the terminal. Open <code>http://localhost:3700</code> and paste the token to get started.</p>
+              <p class="form-hint" style="margin-top:8px">On first run, OpenHinge generates your config automatically. Open <code>http://localhost:3700</code> and set a password to get started.</p>
             </div>
             <div class="doc-card mt-4">
               <h4>Development</h4>
@@ -1273,7 +1273,7 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
               <dl class="doc-dl">
                 <dt>OPENHINGE_PORT</dt><dd>Server port (default: 3700)</dd>
                 <dt>OPENHINGE_HOST</dt><dd>Bind address (default: 127.0.0.1)</dd>
-                <dt>OPENHINGE_ADMIN_TOKEN</dt><dd>Admin dashboard token</dd>
+                <dt>OPENHINGE_PASSWORD_HASH</dt><dd>SHA-256 password hash for dashboard auth</dd>
                 <dt>OPENHINGE_ENCRYPTION_KEY</dt><dd>32+ char key for encrypting provider credentials</dd>
                 <dt>OPENHINGE_DB_PATH</dt><dd>SQLite database path (default: ./data/openhinge.db)</dd>
                 <dt>OPENHINGE_LOG_LEVEL</dt><dd>Log level: trace, debug, info, warn, error</dd>

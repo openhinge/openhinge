@@ -7,7 +7,7 @@ export const defaults = {
     path: './data/openhinge.db',
   },
   auth: {
-    adminToken: '',
+    passwordHash: '',
   },
   encryption: {
     key: '',

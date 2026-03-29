@@ -29,7 +29,7 @@ Use your own subscriptions (Claude Pro, ChatGPT Plus, Gemini) and API keys. Cont
 curl -fsSL https://openhinge.com/install.sh | bash
 ```
 
-That's it. The installer clones, builds, starts the server, and opens the dashboard in your browser. Your admin token is printed in the terminal — paste it in the welcome screen to log in.
+That's it. The installer clones, builds, starts the server, and opens the dashboard in your browser. Set a password on first visit to get started.
 
 Or manually:
 
@@ -285,7 +285,7 @@ WantedBy=multi-user.target
 |----------|---------|-------------|
 | `OPENHINGE_PORT` | 3700 | Server port |
 | `OPENHINGE_HOST` | 127.0.0.1 | Bind address |
-| `OPENHINGE_ADMIN_TOKEN` | (generated) | Dashboard admin token |
+| `OPENHINGE_PASSWORD_HASH` | | SHA-256 password hash for dashboard auth |
 | `OPENHINGE_ENCRYPTION_KEY` | (generated) | Encryption key for provider credentials |
 | `OPENHINGE_DB_PATH` | ./data/openhinge.db | SQLite database path |
 | `OPENHINGE_LOG_LEVEL` | info | Log level |
