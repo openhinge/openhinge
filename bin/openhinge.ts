@@ -278,12 +278,23 @@ program.command('uninstall')
       return;
     }
 
+    // Kill running OpenHinge server
+    console.log('Stopping OpenHinge server...');
+    try {
+      const pids = execSync('lsof -ti:3700', { encoding: 'utf-8' }).trim();
+      if (pids) {
+        for (const pid of pids.split('\n')) {
+          try { process.kill(parseInt(pid)); } catch { /* already dead */ }
+        }
+        console.log('Server stopped.');
+      }
+    } catch { /* nothing running on 3700 */ }
+
     // Remove global npm link
     console.log('Removing global link...');
     try {
       execSync('npm unlink -g openhinge', { cwd: root, stdio: 'pipe' });
     } catch {
-      // May need sudo
       try { execSync('sudo npm unlink -g openhinge', { stdio: 'pipe' }); } catch { /* already gone */ }
     }
 
