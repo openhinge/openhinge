@@ -103,10 +103,14 @@ export class ClaudeProvider extends BaseProvider {
       messages,
       max_tokens: params.max_tokens || 4096,
     };
-    // Subscription tokens require Claude Code identity in system prompt
+    // Subscription tokens require exact Claude Code identity as system prompt
     if (this.isSubscription) {
-      const ccIdentity = "You are Claude Code, Anthropic's official CLI for Claude.";
-      body.system = systemMsg ? `${ccIdentity}\n\n${systemMsg.content}` : ccIdentity;
+      body.system = "You are Claude Code, Anthropic's official CLI for Claude.";
+      // Inject soul/system prompt as a user instruction since subscription API
+      // rejects modified system prompts
+      if (systemMsg) {
+        messages.unshift({ role: 'user', content: `[System Instructions: ${systemMsg.content}]` });
+      }
     } else if (systemMsg) {
       body.system = systemMsg.content;
     }
@@ -172,8 +176,10 @@ export class ClaudeProvider extends BaseProvider {
       stream: true,
     };
     if (this.isSubscription) {
-      const ccIdentity = "You are Claude Code, Anthropic's official CLI for Claude.";
-      body.system = systemMsg ? `${ccIdentity}\n\n${systemMsg.content}` : ccIdentity;
+      body.system = "You are Claude Code, Anthropic's official CLI for Claude.";
+      if (systemMsg) {
+        messages.unshift({ role: 'user', content: `[System Instructions: ${systemMsg.content}]` });
+      }
     } else if (systemMsg) {
       body.system = systemMsg.content;
     }
