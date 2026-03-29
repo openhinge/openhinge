@@ -102,6 +102,132 @@ providerCmd.command('add')
     closeDatabase();
   });
 
+providerCmd.command('add-claude')
+  .description('Auto-import Claude subscription from this computer')
+  .option('-n, --name <name>', 'Provider name')
+  .option('-m, --model <model>', 'Default model')
+  .option('-p, --priority <n>', 'Priority (higher = preferred)', '10')
+  .action(async (opts) => {
+    const { execSync } = await import('node:child_process');
+
+    // Read Claude Code credentials from macOS Keychain
+    let raw: string;
+    try {
+      raw = execSync('security find-generic-password -s "Claude Code-credentials" -w', {
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+      }).trim();
+    } catch {
+      console.error('No Claude Code credentials found on this computer.');
+      console.error('Make sure Claude Code is installed and you are logged in (/login).');
+      process.exit(1);
+    }
+
+    let creds: any;
+    try {
+      creds = JSON.parse(raw);
+    } catch {
+      console.error('Failed to parse Claude Code credentials.');
+      process.exit(1);
+    }
+
+    const oauth = creds.claudeAiOauth;
+    if (!oauth?.accessToken) {
+      console.error('No OAuth token found. Run /login in Claude Code first.');
+      process.exit(1);
+    }
+
+    const config = loadConfig();
+    initDatabase(config.db.path);
+
+    const id = generateId();
+    const subType = oauth.subscriptionType || 'unknown';
+    const providerName = opts.name || `Claude (${subType})`;
+    const credentials: Record<string, string> = {
+      oauth_token: oauth.accessToken,
+      refresh_token: oauth.refreshToken || '',
+      client_id: '9d1c250a-e61b-44d9-88ed-5944d1962f5e',
+      expires_at: String(oauth.expiresAt || ''),
+    };
+    const providerConfig = opts.model ? { default_model: opts.model } : {};
+
+    getDb().prepare(`
+      INSERT INTO providers (id, name, type, base_url, config, credentials, priority)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id, providerName, 'claude', null,
+      JSON.stringify(providerConfig),
+      encrypt(JSON.stringify(credentials), config.encryption.key),
+      parseInt(opts.priority, 10),
+    );
+
+    console.log(`Claude provider added: ${providerName} (${id})`);
+    console.log(`Subscription: ${subType}`);
+    console.log(`Token expires: ${new Date(oauth.expiresAt).toLocaleString()}`);
+    console.log('Auto-refresh enabled with refresh token.');
+    closeDatabase();
+  });
+
+providerCmd.command('refresh-claude')
+  .description('Refresh Claude subscription token from this computer')
+  .option('--id <id>', 'Provider ID to refresh (refreshes all Claude providers if omitted)')
+  .action(async (opts) => {
+    const { execSync } = await import('node:child_process');
+
+    let raw: string;
+    try {
+      raw = execSync('security find-generic-password -s "Claude Code-credentials" -w', {
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+      }).trim();
+    } catch {
+      console.error('No Claude Code credentials found on this computer.');
+      process.exit(1);
+    }
+
+    const oauth = JSON.parse(raw).claudeAiOauth;
+    if (!oauth?.accessToken) {
+      console.error('No OAuth token found.');
+      process.exit(1);
+    }
+
+    const config = loadConfig();
+    initDatabase(config.db.path);
+
+    const query = opts.id
+      ? `SELECT id, name FROM providers WHERE id = ? AND type = 'claude'`
+      : `SELECT id, name FROM providers WHERE type = 'claude'`;
+    const rows = (opts.id
+      ? [getDb().prepare(query).get(opts.id)]
+      : getDb().prepare(query).all()
+    ).filter(Boolean) as any[];
+
+    if (rows.length === 0) {
+      console.log('No Claude providers found.');
+      closeDatabase();
+      return;
+    }
+
+    for (const row of rows) {
+      const credentials: Record<string, string> = {
+        oauth_token: oauth.accessToken,
+        refresh_token: oauth.refreshToken || '',
+        client_id: '9d1c250a-e61b-44d9-88ed-5944d1962f5e',
+        expires_at: String(oauth.expiresAt || ''),
+      };
+
+      getDb().prepare('UPDATE providers SET credentials = ? WHERE id = ?').run(
+        encrypt(JSON.stringify(credentials), config.encryption.key),
+        row.id,
+      );
+
+      console.log(`Refreshed: ${row.name} (${row.id})`);
+    }
+
+    console.log(`Token expires: ${new Date(oauth.expiresAt).toLocaleString()}`);
+    closeDatabase();
+  });
+
 providerCmd.command('health')
   .action(async () => {
     const config = loadConfig();
