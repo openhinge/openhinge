@@ -24,7 +24,7 @@ export async function providerAdminRoutes(app: FastifyInstance, config: Config):
   });
 
   app.post<{ Body: any }>('/admin/providers', async (request, reply) => {
-    const { name, type, base_url, provider_config, credentials, priority } = request.body;
+    const { name, type, base_url, provider_config, credentials, priority } = request.body as any;
     const id = generateId();
 
     const encryptedCreds = encrypt(JSON.stringify(credentials || {}), config.encryption.key);
@@ -41,7 +41,7 @@ export async function providerAdminRoutes(app: FastifyInstance, config: Config):
 
   app.put<{ Params: { id: string }; Body: any }>('/admin/providers/:id', async (request, reply) => {
     const { id } = request.params;
-    const { name, base_url, provider_config, credentials, priority, is_enabled } = request.body;
+    const { name, base_url, provider_config, credentials, priority, is_enabled } = request.body as any;
 
     const sets: string[] = [];
     const values: unknown[] = [];
@@ -75,7 +75,7 @@ export async function providerAdminRoutes(app: FastifyInstance, config: Config):
 
   // Bulk actions on providers
   app.post<{ Body: any }>('/admin/providers/bulk', async (request, reply) => {
-    const { action, ids } = request.body;
+    const { action, ids } = request.body as any;
     if (!Array.isArray(ids) || ids.length === 0) return reply.code(400).send({ error: 'ids required' });
 
     const db = getDb();
@@ -104,7 +104,7 @@ export async function providerAdminRoutes(app: FastifyInstance, config: Config):
 
   // Probe a provider config (without saving) and return available models
   app.post<{ Body: any }>('/admin/providers/probe', async (request, reply) => {
-    const { type, base_url, api_key } = request.body;
+    const { type, base_url, api_key } = request.body as any;
 
     const providerConfig = {
       id: 'probe',

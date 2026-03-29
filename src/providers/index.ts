@@ -47,7 +47,8 @@ export function loadProviders(encryptionKey: string): void {
   const db = getDb();
   const rows = db.prepare('SELECT * FROM providers WHERE is_enabled = 1 ORDER BY priority DESC').all();
   providers.clear();
-  for (const row of rows) {
+  for (const r of rows) {
+    const row = r as any;
     try {
       providers.set(row.id, createProvider(row, encryptionKey));
       logger.info({ id: row.id, type: row.type }, 'Provider loaded');

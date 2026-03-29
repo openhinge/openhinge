@@ -13,12 +13,12 @@ export async function soulAdminRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post<{ Body: any }>('/admin/souls', async (request, reply) => {
-    const soul = souls.createSoul(request.body);
+    const soul = souls.createSoul(request.body as any);
     reply.code(201).send({ data: soul });
   });
 
   app.put<{ Params: { id: string }; Body: any }>('/admin/souls/:id', async (request) => {
-    const soul = souls.updateSoul(request.params.id, request.body);
+    const soul = souls.updateSoul(request.params.id, request.body as any);
     return { data: soul };
   });
 

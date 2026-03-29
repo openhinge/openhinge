@@ -56,7 +56,8 @@ export function validateKey(rawKey: string): ApiKey | null {
     'SELECT * FROM api_keys WHERE is_enabled = 1'
   ).all();
 
-  for (const row of rows) {
+  for (const r of rows) {
+    const row = r as any;
     if (verifyApiKey(rawKey, row.key_hash)) {
       // Check expiry
       if (row.expires_at && new Date(row.expires_at) < new Date()) {

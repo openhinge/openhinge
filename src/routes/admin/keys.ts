@@ -7,7 +7,7 @@ export async function keyAdminRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post<{ Body: any }>('/admin/keys', async (request, reply) => {
-    const key = keys.createKey(request.body);
+    const key = keys.createKey(request.body as any);
     // Return the raw key only on creation — store it now, it won't be shown again
     reply.code(201).send({ data: key });
   });
