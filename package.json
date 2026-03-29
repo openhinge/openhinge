@@ -17,7 +17,7 @@
   "license": "MIT",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc -p tsconfig.build.json; cp -r src/db/migrations dist/src/db/migrations",
+    "build": "tsc -p tsconfig.build.json; cp -r src/db/migrations dist/src/db/migrations; chmod +x dist/bin/openhinge.js",
     "start": "node dist/src/index.js",
     "cli": "tsx bin/openhinge.ts",
     "test": "vitest",
