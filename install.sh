@@ -75,6 +75,19 @@ npm install --production=false --silent 2>&1 | tail -1
 echo -e "${CYAN}→${RESET} Building..."
 npm run build 2>&1 | tail -1
 
+# ── Link globally ────────────────────────────────────────────
+echo -e "${CYAN}→${RESET} Linking openhinge command..."
+npm link --silent 2>/dev/null || {
+  # npm link may need sudo on some systems
+  echo -e "${YELLOW}!${RESET} Trying with sudo..."
+  sudo npm link --silent 2>/dev/null || echo -e "${YELLOW}!${RESET} Could not link globally. Use: cd ~/openhinge && npx openhinge"
+}
+if command -v openhinge &>/dev/null; then
+  echo -e "${GREEN}✓${RESET} openhinge command available globally"
+else
+  echo -e "${YELLOW}!${RESET} Run 'cd ~/openhinge && npx openhinge' if the command is not found"
+fi
+
 echo ""
 echo -e "${GREEN}✓${RESET} OpenHinge installed successfully"
 echo ""
