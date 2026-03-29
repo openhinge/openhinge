@@ -30,7 +30,11 @@ export class ClaudeProvider extends BaseProvider {
     };
     if (this.isSubscription) {
       h['authorization'] = `Bearer ${this.apiKey}`;
-      h['anthropic-beta'] = 'oauth-2025-04-20';
+      h['anthropic-beta'] = 'interleaved-thinking-2025-05-14,oauth-2025-04-20';
+    } else if (this.config.credentials.oauth_token) {
+      // Non-subscription OAuth (e.g. Max plan tokens that don't start with sk-ant-oat01-)
+      h['authorization'] = `Bearer ${this.apiKey}`;
+      h['anthropic-beta'] = 'interleaved-thinking-2025-05-14,oauth-2025-04-20';
     } else {
       h['x-api-key'] = this.apiKey;
     }
@@ -111,6 +115,8 @@ export class ClaudeProvider extends BaseProvider {
       body.tool_choice = { type: 'tool', name: 'structured_response' };
     }
 
+    logger.debug({ url: `${this.baseUrl}/v1/messages`, model, isSubscription: this.isSubscription }, 'Claude chat request');
+
     const res = await this.fetchWithRefresh(`${this.baseUrl}/v1/messages`, {
       method: 'POST',
       headers: this.headers(),
@@ -119,6 +125,7 @@ export class ClaudeProvider extends BaseProvider {
 
     if (!res.ok) {
       const err = await res.text();
+      logger.error({ status: res.status, error: err, model, isSubscription: this.isSubscription }, 'Claude chat error');
       throw new ProviderError('claude', `${res.status}: ${err}`);
     }
 
