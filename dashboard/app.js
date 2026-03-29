@@ -53,12 +53,8 @@ const OS = (() => {
       localStorage.setItem('oh_token', t);
       errEl.classList.add('hidden');
 
-      // Show setup checklist
-      document.getElementById('welcome-login').classList.add('hidden');
-      document.getElementById('welcome-setup').classList.remove('hidden');
-      if (data.setup?.has_providers) document.getElementById('ws-providers').classList.add('done');
-      if (data.setup?.has_souls) document.getElementById('ws-souls').classList.add('done');
-      if (data.setup?.has_keys) document.getElementById('ws-keys').classList.add('done');
+      // Go straight to dashboard
+      welcomeGo();
     } catch {
       errEl.textContent = 'Could not connect to server';
       errEl.classList.remove('hidden');
