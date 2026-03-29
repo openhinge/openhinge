@@ -376,7 +376,29 @@ program.command('update')
 
       const newPkg = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf-8'));
       console.log(`\nUpdated: ${currentPkg.version} → ${newPkg.version}`);
-      console.log('Restart OpenHinge to apply changes.');
+
+      // Auto-restart server if running
+      try {
+        const pids = execSync('lsof -ti:3700', { encoding: 'utf-8' }).trim();
+        if (pids) {
+          console.log('Restarting server...');
+          for (const pid of pids.split('\n')) {
+            try { process.kill(parseInt(pid)); } catch { /* already dead */ }
+          }
+          // Wait for port to free
+          await new Promise(r => setTimeout(r, 1000));
+          const { spawn } = await import('node:child_process');
+          const server = spawn('node', [resolve(root, 'dist/src/index.js')], {
+            cwd: root,
+            detached: true,
+            stdio: 'ignore',
+          });
+          server.unref();
+          console.log('Server restarted.');
+        }
+      } catch { /* server wasn't running, nothing to restart */ }
+
+      console.log('Update complete.');
     } catch (err: any) {
       console.error(`Update failed: ${err.message}`);
       process.exit(1);
