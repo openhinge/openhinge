@@ -159,7 +159,9 @@ export class GeminiProvider extends BaseProvider {
       throw new ProviderError('gemini', `${res.status}: ${err}`);
     }
 
-    const data = await res.json() as any;
+    const raw = await res.json() as any;
+    // OAuth wraps in { response: { candidates, usageMetadata } }, API key returns directly
+    const data = raw.response || raw;
     const candidate = data.candidates?.[0];
     const text = candidate?.content?.parts?.map((p: any) => p.text).join('') || '';
 
@@ -228,7 +230,9 @@ export class GeminiProvider extends BaseProvider {
           if (!raw) continue;
 
           try {
-            const event = JSON.parse(raw);
+            const rawEvent = JSON.parse(raw);
+            // OAuth wraps in { response: ... }, API key returns directly
+            const event = rawEvent.response || rawEvent;
             const text = event.candidates?.[0]?.content?.parts?.map((p: any) => p.text).join('') || '';
             const finish = event.candidates?.[0]?.finishReason;
 
