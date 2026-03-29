@@ -28,13 +28,9 @@ export class ClaudeProvider extends BaseProvider {
       'content-type': 'application/json',
       'anthropic-version': '2023-06-01',
     };
-    if (this.isSubscription) {
+    if (this.isSubscription || this.config.credentials.oauth_token) {
       h['authorization'] = `Bearer ${this.apiKey}`;
-      h['anthropic-beta'] = 'interleaved-thinking-2025-05-14,oauth-2025-04-20';
-    } else if (this.config.credentials.oauth_token) {
-      // Non-subscription OAuth (e.g. Max plan tokens that don't start with sk-ant-oat01-)
-      h['authorization'] = `Bearer ${this.apiKey}`;
-      h['anthropic-beta'] = 'interleaved-thinking-2025-05-14,oauth-2025-04-20';
+      h['anthropic-beta'] = 'oauth-2025-04-20';
     } else {
       h['x-api-key'] = this.apiKey;
     }
@@ -42,7 +38,7 @@ export class ClaudeProvider extends BaseProvider {
   }
 
   defaultModel(): string {
-    return (this.config.config.default_model as string) || 'claude-sonnet-4-6';
+    return (this.config.config.default_model as string) || 'claude-sonnet-4-5-20250514';
   }
 
   // OAuth refresh using refresh_token — works on any platform
