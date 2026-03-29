@@ -3,6 +3,14 @@ export interface ChatMessage {
   content: string;
 }
 
+export interface JsonSchema {
+  type: string;
+  properties?: Record<string, unknown>;
+  required?: string[];
+  items?: unknown;
+  [key: string]: unknown;
+}
+
 export interface ChatRequest {
   messages: ChatMessage[];
   model?: string;
@@ -10,6 +18,14 @@ export interface ChatRequest {
   max_tokens?: number;
   stream?: boolean;
   stop?: string[];
+  response_schema?: JsonSchema;
+}
+
+export interface FallbackAttempt {
+  provider_id: string;
+  provider_name: string;
+  error: string;
+  latency_ms: number;
 }
 
 export interface ChatResponse {
@@ -19,6 +35,7 @@ export interface ChatResponse {
   input_tokens: number;
   output_tokens: number;
   finish_reason: string;
+  fallback_attempts?: FallbackAttempt[];
 }
 
 export interface ChatChunk {

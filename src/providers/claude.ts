@@ -2,7 +2,7 @@ import { BaseProvider } from './base.js';
 import type { ChatRequest, ChatResponse, ChatChunk, HealthStatus } from './types.js';
 import { ProviderError } from '../utils/errors.js';
 import { generateId } from '../utils/crypto.js';
-import { execSync } from 'node:child_process';
+import { logger } from '../utils/logger.js';
 
 export class ClaudeProvider extends BaseProvider {
   readonly type = 'claude';
@@ -41,23 +41,49 @@ export class ClaudeProvider extends BaseProvider {
     return (this.config.config.default_model as string) || 'claude-sonnet-4-6';
   }
 
-  // Re-read OAuth token from macOS Keychain
+  // OAuth refresh using refresh_token — works on any platform
   async refreshToken(): Promise<boolean> {
-    if (!this.isSubscription && !this.config.credentials.oauth_token) return false;
+    const refreshToken = this.config.credentials.refresh_token;
+    const clientId = this.config.credentials.client_id;
+    if (!refreshToken || !clientId) {
+      logger.debug({ id: this.id }, 'No refresh_token or client_id for Claude OAuth refresh');
+      return false;
+    }
+
     try {
-      const raw = execSync(
-        'security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null',
-        { encoding: 'utf-8', timeout: 5000 }
-      ).trim();
-      const data = JSON.parse(raw);
-      const oauth = data.claudeAiOauth;
-      if (oauth?.accessToken && oauth.accessToken !== this.apiKey) {
-        this.config.credentials.oauth_token = oauth.accessToken;
-        this.persistCredentials();
-        return true;
+      const res = await fetch('https://console.anthropic.com/v1/oauth/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'refresh_token',
+          refresh_token: refreshToken,
+          client_id: clientId,
+        }).toString(),
+      });
+
+      if (!res.ok) {
+        logger.warn({ id: this.id, status: res.status }, 'Claude OAuth refresh failed');
+        return false;
       }
-    } catch { /* keychain not available */ }
-    return false;
+
+      const data = await res.json() as any;
+      if (!data.access_token) return false;
+
+      this.config.credentials.oauth_token = data.access_token;
+      if (data.expires_in) {
+        this.config.credentials.expires_at = String(Date.now() + data.expires_in * 1000);
+      }
+      if (data.refresh_token) {
+        this.config.credentials.refresh_token = data.refresh_token;
+      }
+
+      this.persistCredentials();
+      logger.info({ id: this.id }, 'Claude OAuth token refreshed successfully');
+      return true;
+    } catch (err: any) {
+      logger.error({ id: this.id, err: err.message }, 'Claude OAuth refresh error');
+      return false;
+    }
   }
 
   async chat(params: ChatRequest): Promise<ChatResponse> {
@@ -76,6 +102,14 @@ export class ClaudeProvider extends BaseProvider {
     if (systemMsg) body.system = systemMsg.content;
     if (params.temperature !== undefined) body.temperature = params.temperature;
     if (params.stop) body.stop_sequences = params.stop;
+    if (params.response_schema) {
+      body.tools = [{
+        name: 'structured_response',
+        description: 'Return structured JSON matching the schema',
+        input_schema: params.response_schema,
+      }];
+      body.tool_choice = { type: 'tool', name: 'structured_response' };
+    }
 
     const res = await this.fetchWithRefresh(`${this.baseUrl}/v1/messages`, {
       method: 'POST',
@@ -89,12 +123,21 @@ export class ClaudeProvider extends BaseProvider {
     }
 
     const data = await res.json() as any;
-    const textBlock = data.content?.find((b: any) => b.type === 'text');
+
+    // If structured output was requested, extract from tool_use block
+    let content: string;
+    if (params.response_schema) {
+      const toolBlock = data.content?.find((b: any) => b.type === 'tool_use');
+      content = toolBlock ? JSON.stringify(toolBlock.input) : '';
+    } else {
+      const textBlock = data.content?.find((b: any) => b.type === 'text');
+      content = textBlock?.text || '';
+    }
 
     return {
       id: data.id || generateId(),
       model: data.model || model,
-      content: textBlock?.text || '',
+      content,
       input_tokens: data.usage?.input_tokens || 0,
       output_tokens: data.usage?.output_tokens || 0,
       finish_reason: data.stop_reason || 'end_turn',

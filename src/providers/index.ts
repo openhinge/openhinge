@@ -7,7 +7,7 @@ import { ClaudeProvider } from './claude.js';
 import { OpenAIProvider } from './openai.js';
 import { GeminiProvider } from './gemini.js';
 import { OllamaProvider } from './ollama.js';
-import type { ProviderConfig, ChatRequest, ChatResponse, ChatChunk, HealthStatus } from './types.js';
+import type { ProviderConfig, ChatRequest, ChatResponse, ChatChunk, HealthStatus, FallbackAttempt } from './types.js';
 
 const providers = new Map<string, BaseProvider>();
 
@@ -70,42 +70,105 @@ export function getDefaultProvider(): BaseProvider | undefined {
   return getAllProviders()[0];
 }
 
+function getProviderHealth(id: string): string {
+  const db = getDb();
+  const row = db.prepare('SELECT health_status FROM providers WHERE id = ?').get(id) as { health_status: string } | undefined;
+  return row?.health_status || 'unknown';
+}
+
+function getProviderTimeout(id: string): number {
+  const provider = providers.get(id);
+  if (!provider) return 30000;
+  const config = (provider as any).config?.config || {};
+  return (config.timeout_ms as number) || 30000;
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`Timeout after ${ms}ms`)), ms);
+    promise.then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      (e) => { clearTimeout(timer); reject(e); },
+    );
+  });
+}
+
 export async function chatWithFallback(
   providerIds: string[],
   params: ChatRequest,
 ): Promise<{ provider: BaseProvider; response: ChatResponse }> {
+  const attempts: FallbackAttempt[] = [];
+
   for (const id of providerIds) {
     const provider = providers.get(id);
     if (!provider) continue;
 
+    // Skip providers marked as down
+    const health = getProviderHealth(id);
+    if (health === 'down') {
+      logger.warn({ provider: id }, 'Skipping down provider');
+      attempts.push({ provider_id: id, provider_name: provider.name, error: 'Provider is down', latency_ms: 0 });
+      continue;
+    }
+
+    const timeout = getProviderTimeout(id);
+    const start = Date.now();
+
     try {
-      const response = await provider.chat(params);
+      const response = await withTimeout(provider.chat(params), timeout, id);
+      response.fallback_attempts = attempts.length > 0 ? attempts : undefined;
       return { provider, response };
     } catch (err: any) {
-      logger.warn({ provider: id, err: err.message }, 'Provider failed, trying fallback');
+      const latency = Date.now() - start;
+      logger.warn({ provider: id, err: err.message, latency_ms: latency }, 'Provider failed, trying fallback');
+      attempts.push({ provider_id: id, provider_name: provider.name, error: err.message, latency_ms: latency });
     }
   }
-  throw new ProviderError('all', 'All providers in the chain failed');
+
+  const summary = attempts.map(a => `${a.provider_name}: ${a.error}`).join('; ');
+  throw new ProviderError('all', `All providers failed — ${summary}`);
 }
 
 export async function* streamWithFallback(
   providerIds: string[],
   params: ChatRequest,
-): AsyncGenerator<{ provider: BaseProvider; chunk: ChatChunk }> {
+): AsyncGenerator<{ provider: BaseProvider; chunk: ChatChunk; fallback_attempts?: FallbackAttempt[] }> {
+  const attempts: FallbackAttempt[] = [];
+
   for (const id of providerIds) {
     const provider = providers.get(id);
     if (!provider) continue;
 
+    // Skip providers marked as down
+    const health = getProviderHealth(id);
+    if (health === 'down') {
+      logger.warn({ provider: id }, 'Skipping down provider');
+      attempts.push({ provider_id: id, provider_name: provider.name, error: 'Provider is down', latency_ms: 0 });
+      continue;
+    }
+
+    const start = Date.now();
+
     try {
+      let first = true;
       for await (const chunk of provider.chatStream(params)) {
-        yield { provider, chunk };
+        if (first && attempts.length > 0) {
+          yield { provider, chunk, fallback_attempts: attempts };
+          first = false;
+        } else {
+          yield { provider, chunk };
+        }
       }
       return;
     } catch (err: any) {
-      logger.warn({ provider: id, err: err.message }, 'Stream provider failed, trying fallback');
+      const latency = Date.now() - start;
+      logger.warn({ provider: id, err: err.message, latency_ms: latency }, 'Stream provider failed, trying fallback');
+      attempts.push({ provider_id: id, provider_name: provider.name, error: err.message, latency_ms: latency });
     }
   }
-  throw new ProviderError('all', 'All providers in the chain failed');
+
+  const summary = attempts.map(a => `${a.provider_name}: ${a.error}`).join('; ');
+  throw new ProviderError('all', `All providers failed — ${summary}`);
 }
 
 export async function checkAllHealth(encryptionKey: string): Promise<Map<string, HealthStatus>> {

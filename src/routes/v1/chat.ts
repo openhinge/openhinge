@@ -8,7 +8,41 @@ import { logUsage } from '../../cost/index.js';
 import { calculateCostCents } from '../../utils/tokens.js';
 import { generateId } from '../../utils/crypto.js';
 import { NotFoundError, OpenHingeError } from '../../utils/errors.js';
-import type { ChatMessage } from '../../providers/types.js';
+import type { ChatMessage, JsonSchema } from '../../providers/types.js';
+
+/** Lightweight JSON Schema validator — checks type, required fields, and property types */
+function validateBasicSchema(data: unknown, schema: JsonSchema): boolean {
+  if (schema.type === 'object') {
+    if (typeof data !== 'object' || data === null || Array.isArray(data)) return false;
+    const obj = data as Record<string, unknown>;
+    // Check required fields
+    if (schema.required) {
+      for (const key of schema.required) {
+        if (!(key in obj)) return false;
+      }
+    }
+    // Check property types
+    if (schema.properties) {
+      for (const [key, propSchema] of Object.entries(schema.properties)) {
+        if (key in obj && propSchema && typeof propSchema === 'object' && 'type' in propSchema) {
+          const ps = propSchema as JsonSchema;
+          if (ps.type === 'string' && typeof obj[key] !== 'string') return false;
+          if (ps.type === 'number' && typeof obj[key] !== 'number') return false;
+          if (ps.type === 'integer' && (typeof obj[key] !== 'number' || !Number.isInteger(obj[key]))) return false;
+          if (ps.type === 'boolean' && typeof obj[key] !== 'boolean') return false;
+          if (ps.type === 'array' && !Array.isArray(obj[key])) return false;
+          if (ps.type === 'object' && (typeof obj[key] !== 'object' || obj[key] === null || Array.isArray(obj[key]))) return false;
+        }
+      }
+    }
+    return true;
+  }
+  if (schema.type === 'array') return Array.isArray(data);
+  if (schema.type === 'string') return typeof data === 'string';
+  if (schema.type === 'number') return typeof data === 'number';
+  if (schema.type === 'boolean') return typeof data === 'boolean';
+  return true;
+}
 
 interface ChatBody {
   model?: string;
@@ -17,6 +51,7 @@ interface ChatBody {
   max_tokens?: number;
   stream?: boolean;
   stop?: string[];
+  response_schema?: JsonSchema;
 }
 
 export async function chatRoutes(app: FastifyInstance): Promise<void> {
@@ -80,6 +115,14 @@ async function handleChat(request: FastifyRequest<{ Params?: { slug?: string }; 
     throw new OpenHingeError('No providers configured', 503, 'NO_PROVIDERS');
   }
 
+  // Resolve response schema: request body overrides soul config
+  let responseSchema: JsonSchema | undefined;
+  if (body.response_schema) {
+    responseSchema = body.response_schema;
+  } else if (soul?.response_schema) {
+    try { responseSchema = JSON.parse(soul.response_schema); } catch { /* invalid schema stored */ }
+  }
+
   const chatParams = {
     messages,
     model: body.model || soul?.model || undefined,
@@ -87,6 +130,7 @@ async function handleChat(request: FastifyRequest<{ Params?: { slug?: string }; 
     max_tokens: body.max_tokens ?? soul?.max_tokens,
     stream: body.stream,
     stop: body.stop,
+    response_schema: responseSchema,
   };
 
   if (body.stream) {
@@ -153,6 +197,17 @@ async function handleChat(request: FastifyRequest<{ Params?: { slug?: string }; 
   try {
     const { provider, response } = await chatWithFallback(providerIds, chatParams);
 
+    // Validate structured output if schema was requested
+    let schemaValid: boolean | undefined;
+    if (responseSchema && response.content) {
+      try {
+        const parsed = JSON.parse(response.content);
+        schemaValid = validateBasicSchema(parsed, responseSchema);
+      } catch {
+        schemaValid = false;
+      }
+    }
+
     const costCents = calculateCostCents(response.model, response.input_tokens, response.output_tokens);
 
     logUsage({
@@ -189,6 +244,8 @@ async function handleChat(request: FastifyRequest<{ Params?: { slug?: string }; 
         soul: soul?.slug || null,
         provider: provider.name,
         cost_cents: costCents,
+        schema_valid: schemaValid,
+        fallback_attempts: response.fallback_attempts || undefined,
       },
     });
   } catch (err: any) {

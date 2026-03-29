@@ -121,13 +121,19 @@ export class GeminiProvider extends BaseProvider {
     const model = params.model || this.defaultModel();
     const { systemInstruction, contents } = this.toGeminiMessages(params.messages);
 
+    const genConfig: Record<string, unknown> = {
+      maxOutputTokens: params.max_tokens || 4096,
+      temperature: params.temperature,
+      stopSequences: params.stop,
+    };
+    if (params.response_schema) {
+      genConfig.responseMimeType = 'application/json';
+      genConfig.responseSchema = params.response_schema;
+    }
+
     const innerBody: Record<string, unknown> = {
       contents,
-      generationConfig: {
-        maxOutputTokens: params.max_tokens || 4096,
-        temperature: params.temperature,
-        stopSequences: params.stop,
-      },
+      generationConfig: genConfig,
     };
     if (systemInstruction) innerBody.systemInstruction = systemInstruction;
 

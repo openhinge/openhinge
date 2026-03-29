@@ -208,4 +208,50 @@ program.command('status')
     closeDatabase();
   });
 
+// Update command — pull latest, install deps, rebuild, migrate
+program.command('update')
+  .description('Update OpenHinge to the latest version')
+  .action(async () => {
+    const { execSync } = await import('node:child_process');
+    const { resolve } = await import('node:path');
+    const { readFileSync } = await import('node:fs');
+
+    const root = resolve(import.meta.dirname, '..');
+    const currentPkg = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf-8'));
+    console.log(`Current version: ${currentPkg.version}`);
+    console.log('Checking for updates...');
+
+    try {
+      execSync('git fetch origin', { cwd: root, stdio: 'pipe' });
+      const behind = execSync('git rev-list HEAD..origin/main --count', { cwd: root, encoding: 'utf-8' }).trim();
+
+      if (behind === '0') {
+        console.log('Already up to date.');
+        return;
+      }
+
+      console.log(`${behind} new commit(s) available. Updating...`);
+      execSync('git pull --ff-only origin main', { cwd: root, stdio: 'inherit' });
+
+      console.log('Installing dependencies...');
+      execSync('npm install --production=false', { cwd: root, stdio: 'inherit' });
+
+      console.log('Building...');
+      execSync('npm run build', { cwd: root, stdio: 'inherit' });
+
+      // Auto-migrate in case schema changed
+      const config = loadConfig();
+      initDatabase(config.db.path);
+      closeDatabase();
+      console.log('Migrations applied.');
+
+      const newPkg = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf-8'));
+      console.log(`\nUpdated: ${currentPkg.version} → ${newPkg.version}`);
+      console.log('Restart OpenHinge to apply changes.');
+    } catch (err: any) {
+      console.error(`Update failed: ${err.message}`);
+      process.exit(1);
+    }
+  });
+
 program.parse();

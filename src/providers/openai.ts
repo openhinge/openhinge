@@ -223,6 +223,12 @@ export class OpenAIProvider extends BaseProvider {
     };
     if (params.temperature !== undefined) body.temperature = params.temperature;
     if (params.stop) body.stop = params.stop;
+    if (params.response_schema) {
+      body.response_format = {
+        type: 'json_schema',
+        json_schema: { name: 'response', strict: true, schema: params.response_schema },
+      };
+    }
 
     const res = await this.fetchWithRefresh(`${this.baseUrl}/v1/chat/completions`, {
       method: 'POST',
