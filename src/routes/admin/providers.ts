@@ -355,6 +355,32 @@ export async function providerAdminRoutes(app: FastifyInstance, config: Config):
     reply.code(201).send({ id, name: providerName, type, model: defaultModel });
   });
 
+  // Add Claude provider with manual OAuth token (for multiple accounts)
+  app.post<{ Body: { oauth_token: string; refresh_token?: string; name?: string; priority?: number } }>(
+    '/admin/providers/claude-oauth',
+    async (request, reply) => {
+      const body = request.body as any;
+      const { oauth_token, refresh_token, name, priority } = body;
+
+      if (!oauth_token) {
+        return reply.code(400).send({ error: 'OAuth token is required' });
+      }
+
+      const extraCreds: Record<string, string> = {
+        client_id: '9d1c250a-e61b-44d9-88ed-5944d1962f5e',
+      };
+      if (refresh_token) extraCreds.refresh_token = refresh_token;
+
+      const providerName = name || 'Claude (OAuth)';
+      const provider = await createProviderFromToken('claude', oauth_token, providerName, 'oauth_token', extraCreds);
+
+      reply.code(201).send({
+        status: 'complete',
+        provider,
+      });
+    }
+  );
+
   // Open URL in browser (for manual API key pages)
   app.post<{ Body: { url: string } }>('/admin/providers/open-browser', async (request) => {
     const { url } = request.body;
@@ -402,11 +428,11 @@ export async function providerAdminRoutes(app: FastifyInstance, config: Config):
       name: 'Claude (Subscription)',
       clientId: '9d1c250a-e61b-44d9-88ed-5944d1962f5e',
       authUrl: 'https://claude.ai/oauth/authorize',
-      tokenUrl: 'https://console.anthropic.com/v1/oauth/token',
-      redirectUri: 'https://console.anthropic.com/oauth/code/callback',
-      port: 0, // not used — redirect goes to Anthropic, we handle differently
+      tokenUrl: 'https://platform.claude.com/v1/oauth/token',
+      redirectUri: 'http://localhost:19547/oauth/callback',
+      port: 19547,
       callbackPath: '/oauth/callback',
-      scopes: 'org:create_api_key user:profile user:inference',
+      scopes: 'user:profile user:inference',
       providerType: 'claude',
     },
     openai: {
@@ -477,12 +503,12 @@ export async function providerAdminRoutes(app: FastifyInstance, config: Config):
   }
 
   // Start OAuth login
-  app.post<{ Body: { type: string } }>('/admin/providers/auth/start', async (request, reply) => {
-    const { type } = request.body;
+  app.post<{ Body: { type: string; method?: string } }>('/admin/providers/auth/start', async (request, reply) => {
+    const { type, method } = request.body as any;
     authResult = null;
 
-    // === Claude: try keychain first (already authenticated via Claude Code) ===
-    if (type === 'claude') {
+    // === Claude: try keychain first (skip if method=oauth to allow adding different accounts) ===
+    if (type === 'claude' && method !== 'oauth') {
       try {
         const raw = execSync(
           'security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null',
@@ -491,13 +517,19 @@ export async function providerAdminRoutes(app: FastifyInstance, config: Config):
         const data = JSON.parse(raw);
         const oauth = data.claudeAiOauth;
         if (oauth?.accessToken) {
-          const provider = await createProviderFromToken('claude', oauth.accessToken, 'Claude (Subscription)', 'oauth_token');
+          const subType = oauth.subscriptionType || 'unknown';
+          const extraCreds: Record<string, string> = {
+            refresh_token: oauth.refreshToken || '',
+            client_id: '9d1c250a-e61b-44d9-88ed-5944d1962f5e',
+            expires_at: String(oauth.expiresAt || ''),
+          };
+          const provider = await createProviderFromToken('claude', oauth.accessToken, `Claude (${subType})`, 'oauth_token', extraCreds);
           authResult = { status: 'complete', provider };
           return {
             status: 'complete',
             provider,
             method: 'keychain_oauth',
-            subscription: oauth.subscriptionType || 'unknown',
+            subscription: subType,
           };
         }
       } catch { /* fall through to OAuth */ }
@@ -628,11 +660,16 @@ h1{font-size:20px;margin:12px 0 4px}p{color:#888;font-size:14px}</style>
           if (oauthCfg.clientSecret) {
             tokenParams.client_secret = oauthCfg.clientSecret;
           }
+          if (oauthCfg.scopes) {
+            tokenParams.scope = oauthCfg.scopes;
+          }
 
+          // Claude needs JSON body, others use URL-encoded
+          const isJson = oauthCfg.providerType === 'claude';
           const tokenRes = await fetch(oauthCfg.tokenUrl, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: new URLSearchParams(tokenParams).toString(),
+            headers: { 'Content-Type': isJson ? 'application/json' : 'application/x-www-form-urlencoded' },
+            body: isJson ? JSON.stringify(tokenParams) : new URLSearchParams(tokenParams).toString(),
           });
 
           const tokenData = await tokenRes.json() as any;

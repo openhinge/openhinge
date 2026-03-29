@@ -1283,6 +1283,31 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
       return;
     }
 
+    if (type === 'claude') {
+      openModal(`${icons[type]} Add Claude`, `
+        <p class="text-muted" style="margin-bottom:16px;font-size:13px">Choose how to connect to Claude</p>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <button class="btn btn-primary" onclick="OS.quickAdd('claude')" style="width:100%;text-align:left;padding:14px 16px">
+            <div style="font-weight:600">Import from this computer</div>
+            <div style="font-size:12px;opacity:0.7;margin-top:2px">Auto-detect Claude Code subscription credentials</div>
+          </button>
+          <button class="btn btn-secondary" onclick="OS.claudeOAuthLogin()" style="width:100%;text-align:left;padding:14px 16px">
+            <div style="font-weight:600">Login with another Claude account</div>
+            <div style="font-size:12px;opacity:0.7;margin-top:2px">Opens claude.ai in browser — sign in with a different account</div>
+          </button>
+          <button class="btn btn-secondary" onclick="OS.showClaudeOauthForm()" style="width:100%;text-align:left;padding:14px 16px">
+            <div style="font-weight:600">Paste OAuth Token</div>
+            <div style="font-size:12px;opacity:0.7;margin-top:2px">Manually enter a token from another machine</div>
+          </button>
+          <button class="btn btn-secondary" onclick="OS.showApiKeyForm('claude')" style="width:100%;text-align:left;padding:14px 16px">
+            <div style="font-weight:600">Enter API Key</div>
+            <div style="font-size:12px;opacity:0.7;margin-top:2px">Paste an Anthropic API key (console.anthropic.com)</div>
+          </button>
+        </div>
+      `);
+      return;
+    }
+
     openModal(`${icons[type]} Add ${names[type]}`, `
       <p class="text-muted" style="margin-bottom:16px;font-size:13px">Choose how to connect to ${names[type]}</p>
       <div style="display:flex;flex-direction:column;gap:8px">
@@ -1340,6 +1365,95 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
         <button type="submit" class="btn btn-primary" style="width:100%;margin-top:8px">Add Provider</button>
       </form>
     `);
+  }
+
+  async function claudeOAuthLogin() {
+    const btn = event?.target?.closest?.('button');
+    if (btn) { btn.disabled = true; btn.querySelector('div:first-child').textContent = 'Opening browser...'; }
+
+    // Call auth/start with method=oauth to skip keychain and trigger browser OAuth
+    const res = await api('/admin/providers/auth/start', { method: 'POST', body: { type: 'claude', method: 'oauth' } });
+
+    if (res.error) {
+      toast(res.error, 'error');
+      if (btn) { btn.disabled = false; btn.querySelector('div:first-child').textContent = 'Login with another Claude account'; }
+      return;
+    }
+
+    if (res.status === 'complete') {
+      const p = res.provider;
+      toast(`Connected ${p.name}` + (p.model ? ` (${p.model})` : ''), 'success');
+      closeModal();
+      loadProviders();
+      return;
+    }
+
+    if (res.status === 'auth_started') {
+      toast('Sign in to Claude in the browser window...', 'success');
+      closeModal();
+
+      // Poll for completion
+      const pollInterval = setInterval(async () => {
+        const status = await api('/admin/providers/auth/status');
+        if (status.status === 'complete') {
+          clearInterval(pollInterval);
+          const p = status.provider;
+          toast(`Connected ${p.name}` + (p.model ? ` (${p.model})` : ''), 'success');
+          loadProviders();
+        } else if (status.status === 'error') {
+          clearInterval(pollInterval);
+          toast(status.error || 'Auth failed', 'error');
+        }
+      }, 1500);
+
+      setTimeout(() => clearInterval(pollInterval), 300000);
+    }
+  }
+
+  function showClaudeOauthForm() {
+    openModal('🟣 Add Claude — OAuth Token', `
+      <form onsubmit="OS.saveClaudeOauth(event)" id="claude-oauth-form">
+        <p class="text-muted" style="margin-bottom:12px;font-size:13px">
+          Add a different Claude account by pasting its OAuth token.<br>
+          Get it from another machine's keychain or Claude Code credentials.
+        </p>
+        <div class="form-group"><label class="form-label">Name</label><input name="name" value="Claude (Account 2)" placeholder="e.g. Claude (Work)"></div>
+        <div class="form-group">
+          <label class="form-label">OAuth Token</label>
+          <input type="password" name="oauth_token" class="input-mono" placeholder="sk-ant-oat01-..." required>
+          <p class="form-hint">The access token from Claude Code credentials</p>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Refresh Token <span class="text-muted">(optional)</span></label>
+          <input type="password" name="refresh_token" class="input-mono" placeholder="ant-rt01-...">
+          <p class="form-hint">Enables auto-refresh when the access token expires</p>
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%;margin-top:8px">Add Claude Account</button>
+      </form>
+    `);
+  }
+
+  async function saveClaudeOauth(e) {
+    e.preventDefault();
+    const f = new FormData(e.target);
+    const btn = e.target.querySelector('button[type="submit"]');
+    if (btn) { btn.disabled = true; btn.textContent = 'Adding...'; }
+
+    const res = await api('/admin/providers/claude-oauth', { method: 'POST', body: {
+      oauth_token: f.get('oauth_token'),
+      refresh_token: f.get('refresh_token') || undefined,
+      name: f.get('name') || undefined,
+    }});
+
+    if (res.error) {
+      toast(res.error, 'error');
+      if (btn) { btn.disabled = false; btn.textContent = 'Add Claude Account'; }
+      return;
+    }
+
+    closeModal();
+    toast(`Connected ${res.provider?.name || 'Claude'}`, 'success');
+    loadProviders();
   }
 
   function onProviderTypeChange() {
@@ -1743,6 +1857,22 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
 
   // Keys
   async function createKeyModal() {
+    openModal('Create Key', `
+      <p class="text-muted" style="margin-bottom:16px;font-size:13px">What kind of key do you need?</p>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button class="btn btn-primary" onclick="OS.createApiKeyForm()" style="width:100%;text-align:left;padding:14px 16px">
+          <div style="font-weight:600">API Key</div>
+          <div style="font-size:12px;opacity:0.7;margin-top:2px">Standard OpenAI-compatible key for any app or integration</div>
+        </button>
+        <button class="btn btn-secondary" onclick="OS.createOpenClawKeyForm()" style="width:100%;text-align:left;padding:14px 16px">
+          <div style="font-weight:600">OpenClaw Key</div>
+          <div style="font-size:12px;opacity:0.7;margin-top:2px">Generate key + ready-to-paste config for openclaw.json</div>
+        </button>
+      </div>
+    `);
+  }
+
+  async function createApiKeyForm() {
     await loadSoulsList();
 
     const soulCheckboxes = _souls.length > 0 ? `
@@ -1781,6 +1911,89 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
     // Hide soul list initially since "All" is checked
     const soulList = document.getElementById('key-soul-list');
     if (soulList) soulList.style.display = 'none';
+  }
+
+  async function createOpenClawKeyForm() {
+    await loadSoulsList();
+
+    // Get available models from providers
+    const models = [];
+    for (const p of _providers) {
+      if (p.is_enabled) {
+        const cfg = typeof p.config === 'string' ? JSON.parse(p.config || '{}') : (p.config || {});
+        const model = cfg.default_model || p.type;
+        models.push({ id: model, name: `${p.name} — ${model}` });
+      }
+    }
+
+    const modelOpts = models.map(m =>
+      `<option value="${h(m.id)}">${h(m.name)}</option>`
+    ).join('');
+
+    openModal('Create OpenClaw Key', `
+      <form onsubmit="OS.saveOpenClawKey(event)" id="openclaw-key-form">
+        <div class="form-group"><label class="form-label">Name</label><input name="name" value="openclaw" required placeholder="e.g. openclaw-main"></div>
+        <div class="form-group">
+          <label class="form-label">Primary Model</label>
+          <select name="model" class="input-mono">${modelOpts}</select>
+          <p class="form-hint">The model OpenClaw will request via OpenHinge</p>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Rate Limit (per min)</label>
+          <input name="rpm" type="number" value="120">
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%;margin-top:8px">Generate OpenClaw Key</button>
+      </form>
+    `);
+  }
+
+  async function saveOpenClawKey(e) {
+    e.preventDefault();
+    const f = new FormData(e.target);
+    const model = f.get('model') || 'claude-sonnet-4-6';
+
+    const { data } = await api('/admin/keys', { method: 'POST', body: {
+      name: f.get('name'),
+      rate_limit_rpm: parseInt(f.get('rpm')) || 120,
+    }});
+
+    if (data?.key) {
+      const host = window.location.hostname || 'localhost';
+      const port = window.location.port || '3700';
+      const baseUrl = `http://${host}:${port}/v1`;
+
+      const configSnippet = JSON.stringify({
+        openhinge: {
+          baseUrl: baseUrl,
+          apiKey: data.key,
+          api: 'openai-completions',
+          models: [{
+            id: model,
+            name: `OpenHinge — ${model}`,
+            reasoning: false,
+            input: ['text'],
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+            contextWindow: 200000,
+            maxTokens: 16384,
+          }],
+        },
+      }, null, 2);
+
+      closeModal();
+      openModal('OpenClaw Key Created', `
+        <p style="margin-bottom:12px;font-size:13px;color:var(--text-secondary)">Save this key now. It will not be shown again.</p>
+        <div class="code-block" style="word-break:break-all;margin-bottom:12px">${data.key}</div>
+        <p style="margin-bottom:8px;font-size:13px;font-weight:600">Add to openclaw.json → models.providers:</p>
+        <div class="code-block" style="font-size:11px;max-height:240px;overflow:auto;white-space:pre;margin-bottom:12px">${h(configSnippet)}</div>
+        <p style="margin-bottom:8px;font-size:13px;font-weight:600">Then set as primary model:</p>
+        <div class="code-block" style="font-size:11px;white-space:pre;margin-bottom:12px">"primary": "openhinge/${h(model)}"</div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-secondary" style="flex:1" onclick="navigator.clipboard.writeText('${data.key}');OS.toast('Key copied!','success')">Copy Key</button>
+          <button class="btn btn-primary" style="flex:1" onclick="navigator.clipboard.writeText(${h(JSON.stringify(configSnippet))});OS.toast('Config copied!','success')">Copy Config</button>
+        </div>
+      `);
+    }
+    loaders.keys();
   }
 
   function toggleAllSouls(checked) {
@@ -2104,9 +2317,9 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
 
   return {
     closeModal, toast, navigate, welcomeLogin, welcomeGo,
-    addProviderModal, addProviderStep2, showApiKeyForm, saveProvider, editProviderModal, updateProvider, deleteProvider, healthCheck, healthCheckOne, fetchModels, onProviderTypeChange, quickAdd, openApiPage,
+    addProviderModal, addProviderStep2, showApiKeyForm, showClaudeOauthForm, saveClaudeOauth, claudeOAuthLogin, saveProvider, editProviderModal, updateProvider, deleteProvider, healthCheck, healthCheckOne, fetchModels, onProviderTypeChange, quickAdd, openApiPage,
     addSoulModal, saveSoul, editSoulModal, deleteSoul, onSoulProviderChange,
-    createKeyModal, saveKey, revokeKey, deleteKey, toggleAllSouls,
+    createKeyModal, createApiKeyForm, createOpenClawKeyForm, saveOpenClawKey, saveKey, revokeKey, deleteKey, toggleAllSouls,
     saveCloudflare, saveSettings, scrollDoc,
     cfConnect, cfZoneChange,
     provFilter, provClearFilters, provToggle, provSelectAll, provSelectNone, provBulk,
