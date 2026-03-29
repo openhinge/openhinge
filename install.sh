@@ -92,6 +92,14 @@ echo ""
 echo -e "${GREEN}✓${RESET} OpenHinge installed successfully"
 echo ""
 
+# ── Kill existing instance if running ─────────────────────────
+EXISTING_PID=$(lsof -ti:3700 2>/dev/null || true)
+if [ -n "$EXISTING_PID" ]; then
+  echo -e "${YELLOW}!${RESET} Port 3700 in use — stopping existing instance (PID $EXISTING_PID)"
+  kill $EXISTING_PID 2>/dev/null || true
+  sleep 1
+fi
+
 # ── Start the server and open browser ─────────────────────────
 echo -e "${CYAN}→${RESET} Starting OpenHinge..."
 echo ""
