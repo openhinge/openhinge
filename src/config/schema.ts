@@ -11,7 +11,6 @@ export const configSchema = z.object({
   }).default({}),
 
   auth: z.object({
-    adminToken: z.string().min(16).optional(),
     passwordHash: z.string().optional(),
   }).default({}),
 

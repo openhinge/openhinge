@@ -18,7 +18,6 @@ export function loadConfig(): Config {
       path: process.env.OPENHINGE_DB_PATH,
     },
     auth: {
-      adminToken: process.env.OPENHINGE_ADMIN_TOKEN,
       passwordHash: process.env.OPENHINGE_PASSWORD_HASH,
     },
     encryption: {

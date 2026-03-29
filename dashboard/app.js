@@ -19,6 +19,8 @@ const OS = (() => {
     showWelcome();
   }
 
+  let _isSetup = false; // true = first time, setting password
+
   async function showWelcome() {
     document.getElementById('app').style.display = 'none';
     document.getElementById('welcome-screen').classList.remove('hidden');
@@ -26,108 +28,52 @@ const OS = (() => {
     document.getElementById('welcome-login').classList.remove('hidden');
     document.getElementById('welcome-setup').classList.add('hidden');
 
-    // Hide all auth forms first
-    document.getElementById('welcome-setup-pw').classList.add('hidden');
-    document.getElementById('welcome-enter-pw').classList.add('hidden');
-    document.getElementById('welcome-enter-token').classList.add('hidden');
+    const input = document.getElementById('welcome-pw');
+    input.value = '';
 
     try {
       const res = await fetch('/admin/auth/status');
       const data = await res.json();
-      if (!data.hasPassword && !data.hasLegacyToken) {
-        // No auth set — show set password form
-        document.getElementById('welcome-setup-pw').classList.remove('hidden');
-        document.getElementById('welcome-new-pw').focus();
-      } else if (data.hasLegacyToken) {
-        // Legacy admin token mode
-        document.getElementById('welcome-enter-token').classList.remove('hidden');
-        document.getElementById('welcome-token').focus();
+      _isSetup = !data.hasPassword;
+      if (_isSetup) {
+        document.getElementById('welcome-label').textContent = 'Create a password';
+        input.placeholder = 'Choose a password';
+        input.autocomplete = 'new-password';
+        document.getElementById('welcome-hint').textContent = 'This password protects your dashboard. You can change it later in settings.';
+        document.getElementById('welcome-hint').classList.remove('hidden');
       } else {
-        // Password mode
-        document.getElementById('welcome-enter-pw').classList.remove('hidden');
-        document.getElementById('welcome-pw').focus();
+        document.getElementById('welcome-label').textContent = 'Password';
+        input.placeholder = 'Enter your password';
+        input.autocomplete = 'current-password';
+        document.getElementById('welcome-hint').classList.add('hidden');
       }
     } catch {
-      // Can't reach server — show password form as default
-      document.getElementById('welcome-enter-pw').classList.remove('hidden');
-      document.getElementById('welcome-pw').focus();
+      _isSetup = false;
+      document.getElementById('welcome-hint').classList.add('hidden');
     }
+    input.focus();
   }
 
-  async function welcomeSetup() {
-    const input = document.getElementById('welcome-new-pw');
+  async function welcomeSubmit() {
+    const input = document.getElementById('welcome-pw');
     const pw = input.value.trim();
     const errEl = document.getElementById('welcome-error');
-    if (!pw || pw.length < 4) { errEl.textContent = 'Password must be at least 4 characters'; errEl.classList.remove('hidden'); return; }
 
+    if (!pw) { errEl.textContent = _isSetup ? 'Choose a password' : 'Enter your password'; errEl.classList.remove('hidden'); return; }
+    if (_isSetup && pw.length < 4) { errEl.textContent = 'Password must be at least 4 characters'; errEl.classList.remove('hidden'); return; }
+
+    const endpoint = _isSetup ? '/admin/auth/setup' : '/admin/auth/login';
     try {
-      const res = await fetch('/admin/auth/setup', {
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password: pw }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        errEl.textContent = data.error || 'Setup failed';
+        errEl.textContent = data.error || (_isSetup ? 'Setup failed' : 'Wrong password');
         errEl.classList.remove('hidden');
-        return;
-      }
-      const data = await res.json();
-      token = data.token;
-      localStorage.setItem('oh_token', data.token);
-      errEl.classList.add('hidden');
-      welcomeGo();
-    } catch {
-      errEl.textContent = 'Could not connect to server';
-      errEl.classList.remove('hidden');
-    }
-  }
-
-  async function welcomeLogin() {
-    const input = document.getElementById('welcome-pw');
-    const pw = input.value.trim();
-    const errEl = document.getElementById('welcome-error');
-    if (!pw) { errEl.textContent = 'Enter your password'; errEl.classList.remove('hidden'); return; }
-
-    try {
-      const res = await fetch('/admin/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: pw }),
-      });
-      if (!res.ok) {
-        errEl.textContent = 'Wrong password';
-        errEl.classList.remove('hidden');
-        input.select();
-        return;
-      }
-      const data = await res.json();
-      token = data.token;
-      localStorage.setItem('oh_token', data.token);
-      errEl.classList.add('hidden');
-      welcomeGo();
-    } catch {
-      errEl.textContent = 'Could not connect to server';
-      errEl.classList.remove('hidden');
-    }
-  }
-
-  async function welcomeLegacyLogin() {
-    const input = document.getElementById('welcome-token');
-    const t = input.value.trim();
-    const errEl = document.getElementById('welcome-error');
-    if (!t) { errEl.textContent = 'Please enter your admin token'; errEl.classList.remove('hidden'); return; }
-
-    try {
-      const res = await fetch('/admin/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: t }),
-      });
-      if (!res.ok) {
-        errEl.textContent = 'Invalid token';
-        errEl.classList.remove('hidden');
-        input.select();
+        if (!_isSetup) input.select();
         return;
       }
       const data = await res.json();
@@ -148,15 +94,9 @@ const OS = (() => {
     navigate(titles[startPage] ? startPage : 'dashboard', false);
   }
 
-  // Enter key on auth inputs
-  document.getElementById('welcome-new-pw')?.addEventListener('keydown', e => {
-    if (e.key === 'Enter') welcomeSetup();
-  });
+  // Enter key on password input
   document.getElementById('welcome-pw')?.addEventListener('keydown', e => {
-    if (e.key === 'Enter') welcomeLogin();
-  });
-  document.getElementById('welcome-token')?.addEventListener('keydown', e => {
-    if (e.key === 'Enter') welcomeLegacyLogin();
+    if (e.key === 'Enter') welcomeSubmit();
   });
 
   // ===== Toast =====
@@ -2513,7 +2453,7 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
   init();
 
   return {
-    closeModal, toast, navigate, welcomeLogin, welcomeSetup, welcomeLegacyLogin, welcomeGo,
+    closeModal, toast, navigate, welcomeSubmit, welcomeGo,
     addProviderModal, addProviderStep2, showApiKeyForm, showClaudeOauthForm, saveClaudeOauth, claudeOAuthLogin, saveProvider, editProviderModal, updateProvider, deleteProvider, healthCheck, healthCheckOne, fetchModels, onProviderTypeChange, quickAdd, openApiPage,
     addSoulModal, saveSoul, editSoulModal, deleteSoul, onSoulProviderChange,
     createKeyModal, createApiKeyForm, createOpenClawKeyForm, saveOpenClawKey, saveKey, revokeKey, deleteKey, toggleAllSouls,
