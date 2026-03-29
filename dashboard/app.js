@@ -1929,7 +1929,14 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
   }
 
   async function createApiKeyForm() {
-    await loadSoulsList();
+    await Promise.all([loadSoulsList(), loadProvidersList()]);
+
+    // Provider info — show which provider handles requests
+    const defaultProvider = _providers.find(p => p.is_enabled);
+    const providerInfo = _providers.filter(p => p.is_enabled).map(p => {
+      const cfg = typeof p.config === 'string' ? JSON.parse(p.config || '{}') : (p.config || {});
+      return `${h(p.name)} (${h(cfg.default_model || p.type)})`;
+    }).join(', ');
 
     const soulCheckboxes = _souls.length > 0 ? `
       <div class="form-group">
@@ -1941,20 +1948,33 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
           </label>
         </div>
         <div id="key-soul-list" style="display:none;max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px;display:flex;flex-direction:column;gap:4px">
-          ${_souls.map(s => `
+          ${_souls.map(s => {
+            const sp = _providers.find(p => p.id === s.provider_id);
+            const provLabel = sp ? ` → ${h(sp.name)}` : '';
+            return `
             <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;padding:4px 0">
               <input type="checkbox" name="soul_ids" value="${h(s.id)}" style="width:auto" class="soul-checkbox">
-              ${h(s.name)} <span class="text-muted text-sm">(${h(s.slug)})</span>
-            </label>
-          `).join('')}
+              ${h(s.name)} <span class="text-muted text-sm">(${h(s.slug)}${provLabel})</span>
+            </label>`;
+          }).join('')}
         </div>
-        <p class="form-hint">Select which souls this key can access</p>
+        <p class="form-hint">Select which souls this key can access. Each soul routes to its own provider.</p>
       </div>
     ` : '';
+
+    const routingHint = _souls.length === 0
+      ? `<div class="form-group">
+          <div style="padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-hover);font-size:12px;color:var(--text-secondary);line-height:1.5">
+            <strong style="color:var(--text)">Routes to:</strong> ${providerInfo || 'No providers configured'}
+            <br>This key will use the default provider. Create a <strong>Soul</strong> first to control which provider and model each key uses.
+          </div>
+        </div>`
+      : '';
 
     openModal('Create API Key', `
       <form onsubmit="OS.saveKey(event)" id="key-form">
         <div class="form-group"><label class="form-label">Name</label><input name="name" required placeholder="e.g. my-assistant"></div>
+        ${routingHint}
         ${soulCheckboxes}
         <div class="form-group">
           <label class="form-label">Rate Limit (per min)</label>
