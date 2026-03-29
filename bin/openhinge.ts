@@ -216,7 +216,10 @@ program.command('update')
     const { resolve } = await import('node:path');
     const { readFileSync } = await import('node:fs');
 
-    const root = resolve(import.meta.dirname, '..');
+    // import.meta.dirname = dist/bin/ in compiled, bin/ in dev — find project root via package.json
+    let root = resolve(import.meta.dirname, '..');
+    const { existsSync } = await import('node:fs');
+    if (!existsSync(resolve(root, 'package.json'))) root = resolve(root, '..');
     const currentPkg = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf-8'));
     console.log(`Current version: ${currentPkg.version}`);
     console.log('Checking for updates...');
@@ -260,9 +263,11 @@ program.command('uninstall')
   .action(async () => {
     const { execSync } = await import('node:child_process');
     const { resolve } = await import('node:path');
+    const { existsSync } = await import('node:fs');
     const readline = await import('node:readline');
 
-    const root = resolve(import.meta.dirname, '..');
+    let root = resolve(import.meta.dirname, '..');
+    if (!existsSync(resolve(root, 'package.json'))) root = resolve(root, '..');
 
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     const answer = await new Promise<string>(r => rl.question('This will remove OpenHinge and all data. Continue? (y/N) ', r));
