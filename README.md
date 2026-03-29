@@ -19,6 +19,9 @@ Use your own subscriptions (Claude Pro, ChatGPT Plus, Gemini) and API keys. Cont
 - **Cloudflare Tunnel** — Expose your gateway over HTTPS without opening ports.
 - **CLI** — Full command-line interface for setup and management.
 - **Zero external dependencies** — Embedded SQLite, no Redis/Postgres/Docker required.
+- **Multi-account providers** — Add unlimited accounts of the same type (e.g., 10 Claude subscriptions). Automatic fallback between them.
+- **OpenClaw integration** — Generate OpenClaw-ready API keys with auto-configured provider blocks from the dashboard.
+- **Self-update** — `openhinge update` pulls latest, rebuilds, migrates, and auto-restarts the server.
 
 ## Quick Start
 
@@ -46,7 +49,7 @@ Go to **Providers → Add Provider**. Choose your provider and authenticate:
 
 | Provider | OAuth (Subscription) | API Key |
 |----------|---------------------|---------|
-| **Claude** | Auto-detects from Claude Code keychain | `sk-ant-api03-...` from console.anthropic.com |
+| **Claude** | Keychain import, browser OAuth (multiple accounts), or paste token | `sk-ant-api03-...` from console.anthropic.com |
 | **OpenAI** | Auto-detects from Codex CLI auth | `sk-...` from platform.openai.com |
 | **Gemini** | Browser OAuth with Google account | Key from aistudio.google.com |
 | **Ollama** | Auto-detected on localhost:11434 | N/A |
@@ -209,6 +212,44 @@ npx tsx bin/openhinge.ts <command>
 | `soul add` | Create a soul |
 | `key list` | List API keys |
 | `key create` | Generate a new key |
+| `provider add-claude` | Auto-import Claude subscription from macOS Keychain |
+| `provider refresh-claude` | Refresh Claude OAuth tokens from Keychain |
+| `update` | Pull latest, rebuild, migrate, and auto-restart server |
+| `uninstall` | Remove OpenHinge completely |
+
+## OpenClaw Integration
+
+OpenHinge works as a provider backend for OpenClaw. Generate a key from the dashboard:
+
+1. Go to **API Keys → Create Key → OpenClaw Key**
+2. Select the model your agents should use
+3. Copy the generated config block
+
+Paste into your `openclaw.json` under `models.providers`:
+
+```json
+{
+  "openhinge": {
+    "baseUrl": "http://localhost:3700/v1",
+    "apiKey": "ohk_YOUR_KEY",
+    "api": "openai-completions",
+    "models": [{
+      "id": "claude-sonnet-4-6",
+      "name": "OpenHinge — claude-sonnet-4-6",
+      "reasoning": false,
+      "input": ["text"],
+      "contextWindow": 200000,
+      "maxTokens": 16384
+    }]
+  }
+}
+```
+
+Then set your agent's primary model:
+
+```json
+"primary": "openhinge/claude-sonnet-4-6"
+```
 
 ## Deployment
 

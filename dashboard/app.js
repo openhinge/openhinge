@@ -759,6 +759,7 @@ const OS = (() => {
           <a href="#doc-logs" class="docs-link" onclick="OS.scrollDoc(event,'doc-logs')">Request Logs</a>
           <a href="#doc-cloudflare" class="docs-link" onclick="OS.scrollDoc(event,'doc-cloudflare')">Cloudflare Tunnel</a>
           <a href="#doc-cli" class="docs-link" onclick="OS.scrollDoc(event,'doc-cli')">CLI Reference</a>
+          <a href="#doc-openclaw" class="docs-link" onclick="OS.scrollDoc(event,'doc-openclaw')">OpenClaw</a>
           <a href="#doc-sdk" class="docs-link" onclick="OS.scrollDoc(event,'doc-sdk')">SDK Examples</a>
           <a href="#doc-deploy" class="docs-link" onclick="OS.scrollDoc(event,'doc-deploy')">Deployment</a>
         </div>
@@ -884,7 +885,7 @@ LLM Providers
 
             <div class="doc-card">
               <h4>Claude</h4>
-              <p><strong>OAuth (recommended):</strong> Click "Login with Claude" — auto-detects your Claude Code subscription token from the macOS Keychain. Uses your Pro/Team/Max subscription with no per-token cost.</p>
+              <p><strong>OAuth (recommended):</strong> Click "Import from this computer" to auto-detect your Claude Code subscription from the macOS Keychain. Click "Login with another account" to sign in to additional Claude accounts via browser OAuth. You can add unlimited Claude accounts — they'll automatically fall back to each other.</p>
               <p><strong>API key:</strong> Enter your <code>sk-ant-api03-</code> key from console.anthropic.com. Pay-per-token pricing.</p>
               <p class="form-hint">Models: claude-sonnet-4-6, claude-opus-4-6, claude-haiku-4-5, etc.</p>
             </div>
@@ -1088,7 +1089,38 @@ LLM Providers
                 <tr><td><code>soul add</code></td><td>Create a new soul interactively</td></tr>
                 <tr><td><code>key list</code></td><td>List API keys (prefix only)</td></tr>
                 <tr><td><code>key create</code></td><td>Generate a new API key</td></tr>
+                <tr><td><code>provider add-claude</code></td><td>Auto-import Claude subscription from macOS Keychain</td></tr>
+                <tr><td><code>provider refresh-claude</code></td><td>Refresh Claude OAuth tokens from Keychain</td></tr>
+                <tr><td><code>update</code></td><td>Pull latest, rebuild, migrate, and auto-restart server</td></tr>
+                <tr><td><code>uninstall</code></td><td>Remove OpenHinge completely</td></tr>
               </tbody></table>
+            </div>
+          </section>
+
+          <div class="separator"></div>
+
+          <section id="doc-openclaw">
+            <h2>OpenClaw Integration</h2>
+            <p>OpenHinge works as a provider backend for OpenClaw agents. Generate a key with auto-configured settings from the dashboard.</p>
+            <div class="doc-card">
+              <h4>Setup</h4>
+              <ol class="doc-ol">
+                <li>Go to <a href="#" onclick="OS.navigate('keys');return false" style="color:var(--primary)">API Keys</a> and click "Create Key"</li>
+                <li>Choose "OpenClaw Key"</li>
+                <li>Select the primary model your agents should use</li>
+                <li>Click "Generate OpenClaw Key"</li>
+                <li>Copy the config block and paste it into your <code>openclaw.json</code> under <code>models.providers</code></li>
+                <li>Set your agent's primary model to <code>openhinge/model-id</code></li>
+              </ol>
+            </div>
+            <div class="doc-card mt-4">
+              <h4>How it works</h4>
+              <p>OpenClaw sends requests to OpenHinge using the <code>openai-completions</code> API format. OpenHinge translates the request to the appropriate provider (Claude, OpenAI, Gemini, etc.) and streams the response back in OpenAI format.</p>
+              <p class="form-hint">This means your OpenClaw agents can use Claude, Gemini, or any provider through a single OpenAI-compatible endpoint — with automatic fallback, rate limiting, and usage logging.</p>
+            </div>
+            <div class="doc-card mt-4">
+              <h4>Multi-account stacking</h4>
+              <p>Add multiple accounts of the same provider (e.g., 10 Claude subscriptions) and OpenHinge will automatically fall back to the next account if one hits rate limits or goes down. Your OpenClaw agents get uninterrupted access across all accounts.</p>
             </div>
           </section>
 
@@ -1232,27 +1264,25 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
 
   // Provider
   async function addProviderModal() {
-    const icons = { claude: '🟣', openai: '🟢', gemini: '🔵', ollama: '⚫' };
     const providers = [
-      { type: 'claude', name: 'Claude', desc: 'Anthropic' },
-      { type: 'openai', name: 'OpenAI', desc: 'GPT-4o, o1, o3' },
-      { type: 'gemini', name: 'Gemini', desc: 'Google AI' },
-      { type: 'ollama', name: 'Ollama', desc: 'Local models' },
+      { type: 'claude', name: 'Claude', desc: 'Anthropic', icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 12l3 3 5-5"/></svg>` },
+      { type: 'openai', name: 'OpenAI', desc: 'GPT-4o, o1, o3', icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 12V2"/><path d="M12 12l7-7"/></svg>` },
+      { type: 'gemini', name: 'Gemini', desc: 'Google AI', icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l4 8 8 1-6 5 2 8-8-5-8 5 2-8-6-5 8-1z"/></svg>` },
+      { type: 'ollama', name: 'Ollama', desc: 'Local models', icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/></svg>` },
     ];
 
     const grid = providers.map(p => `
-      <div class="card" style="padding:16px;cursor:pointer;transition:border-color 0.15s"
-           onmouseenter="this.style.borderColor='var(--accent)'" onmouseleave="this.style.borderColor='var(--border)'"
-           onclick="OS.addProviderStep2('${p.type}')">
-        <div style="font-size:20px;margin-bottom:6px">${icons[p.type]}</div>
-        <div style="font-weight:600;font-size:14px">${p.name}</div>
-        <div class="text-muted text-sm">${p.desc}</div>
-      </div>
+      <button class="option-card" onclick="OS.addProviderStep2('${p.type}')">
+        <div class="option-card-icon">${p.icon}</div>
+        <div class="option-card-text">
+          <div class="option-card-title">${p.name}</div>
+          <div class="option-card-desc">${p.desc}</div>
+        </div>
+      </button>
     `).join('');
 
     openModal('Add Provider', `
-      <p class="text-muted" style="margin-bottom:12px;font-size:13px">Choose a provider to connect</p>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${grid}</div>
+      <div class="option-list">${grid}</div>
     `);
   }
 
@@ -1262,13 +1292,18 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
 
     // Ollama has no auth options
     if (type === 'ollama') {
-      openModal(`${icons[type]} Add Ollama`, `
-        <p class="text-muted" style="margin-bottom:16px;font-size:13px">Connect to a local Ollama instance</p>
-        <div style="display:flex;flex-direction:column;gap:8px">
-          <button class="btn btn-primary" onclick="OS.quickAdd('ollama')" style="width:100%">
-            Auto-detect Local Ollama
+      openModal('Add Ollama', `
+        <div class="option-list" style="margin-bottom:16px">
+          <button class="option-card option-primary" onclick="OS.quickAdd('ollama')">
+            <div class="option-card-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-6.219-8.56"/><polyline points="21 3 21 12 12 12"/></svg></div>
+            <div class="option-card-text">
+              <div class="option-card-title">Auto-detect Local Ollama</div>
+              <div class="option-card-desc">Connect to Ollama running on this machine</div>
+            </div>
           </button>
-          <div class="separator" style="margin:8px 0"></div>
+        </div>
+        <div style="border-top:1px solid var(--border);padding-top:16px">
+          <p class="text-muted" style="margin-bottom:12px;font-size:12px;font-weight:500">Or configure manually</p>
           <form onsubmit="OS.saveProvider(event)" id="provider-form">
             <input type="hidden" name="type" value="ollama">
             <div class="form-group"><label class="form-label">Name</label><input name="name" value="Ollama" placeholder="e.g. Ollama Remote"></div>
@@ -1276,7 +1311,7 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
               <div class="form-group" style="flex:2"><label class="form-label">Base URL</label><input name="base_url" value="http://127.0.0.1:11434" class="input-mono"></div>
               <div class="form-group" style="flex:1"><label class="form-label">Priority</label><input name="priority" type="number" value="30"></div>
             </div>
-            <button type="submit" class="btn btn-secondary" style="width:100%;margin-top:8px">Add Manually</button>
+            <button type="submit" class="btn btn-secondary" style="width:100%;margin-top:4px">Add Manually</button>
           </form>
         </div>
       `);
@@ -1284,40 +1319,56 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
     }
 
     if (type === 'claude') {
-      openModal(`${icons[type]} Add Claude`, `
-        <p class="text-muted" style="margin-bottom:16px;font-size:13px">Choose how to connect to Claude</p>
-        <div style="display:flex;flex-direction:column;gap:8px">
-          <button class="btn btn-primary" onclick="OS.quickAdd('claude')" style="width:100%;text-align:left;padding:14px 16px">
-            <div style="font-weight:600">Import from this computer</div>
-            <div style="font-size:12px;opacity:0.7;margin-top:2px">Auto-detect Claude Code subscription credentials</div>
+      openModal('Add Claude', `
+        <div class="option-list">
+          <button class="option-card option-primary" onclick="OS.quickAdd('claude')">
+            <div class="option-card-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg></div>
+            <div class="option-card-text">
+              <div class="option-card-title">Import from this computer</div>
+              <div class="option-card-desc">Auto-detect Claude Code subscription</div>
+            </div>
           </button>
-          <button class="btn btn-secondary" onclick="OS.claudeOAuthLogin()" style="width:100%;text-align:left;padding:14px 16px">
-            <div style="font-weight:600">Login with another Claude account</div>
-            <div style="font-size:12px;opacity:0.7;margin-top:2px">Opens claude.ai in browser — sign in with a different account</div>
+          <button class="option-card" onclick="OS.claudeOAuthLogin()">
+            <div class="option-card-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg></div>
+            <div class="option-card-text">
+              <div class="option-card-title">Login with another account</div>
+              <div class="option-card-desc">Opens claude.ai — sign in with a different account</div>
+            </div>
           </button>
-          <button class="btn btn-secondary" onclick="OS.showClaudeOauthForm()" style="width:100%;text-align:left;padding:14px 16px">
-            <div style="font-weight:600">Paste OAuth Token</div>
-            <div style="font-size:12px;opacity:0.7;margin-top:2px">Manually enter a token from another machine</div>
+          <button class="option-card" onclick="OS.showClaudeOauthForm()">
+            <div class="option-card-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg></div>
+            <div class="option-card-text">
+              <div class="option-card-title">Paste OAuth Token</div>
+              <div class="option-card-desc">Enter a token from another machine</div>
+            </div>
           </button>
-          <button class="btn btn-secondary" onclick="OS.showApiKeyForm('claude')" style="width:100%;text-align:left;padding:14px 16px">
-            <div style="font-weight:600">Enter API Key</div>
-            <div style="font-size:12px;opacity:0.7;margin-top:2px">Paste an Anthropic API key (console.anthropic.com)</div>
+          <button class="option-card" onclick="OS.showApiKeyForm('claude')">
+            <div class="option-card-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg></div>
+            <div class="option-card-text">
+              <div class="option-card-title">Enter API Key</div>
+              <div class="option-card-desc">Paste an Anthropic API key</div>
+            </div>
           </button>
         </div>
       `);
       return;
     }
 
-    openModal(`${icons[type]} Add ${names[type]}`, `
-      <p class="text-muted" style="margin-bottom:16px;font-size:13px">Choose how to connect to ${names[type]}</p>
-      <div style="display:flex;flex-direction:column;gap:8px">
-        <button class="btn btn-primary" onclick="OS.quickAdd('${type}')" style="width:100%;text-align:left;padding:14px 16px">
-          <div style="font-weight:600">Login with ${names[type]}</div>
-          <div style="font-size:12px;opacity:0.7;margin-top:2px">Use your subscription via OAuth — opens login page</div>
+    openModal(`Add ${names[type]}`, `
+      <div class="option-list">
+        <button class="option-card option-primary" onclick="OS.quickAdd('${type}')">
+          <div class="option-card-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg></div>
+          <div class="option-card-text">
+            <div class="option-card-title">Login with ${names[type]}</div>
+            <div class="option-card-desc">Use your subscription via OAuth</div>
+          </div>
         </button>
-        <button class="btn btn-secondary" onclick="OS.showApiKeyForm('${type}')" style="width:100%;text-align:left;padding:14px 16px">
-          <div style="font-weight:600">Enter API Key</div>
-          <div style="font-size:12px;opacity:0.7;margin-top:2px">Paste an API key manually</div>
+        <button class="option-card" onclick="OS.showApiKeyForm('${type}')">
+          <div class="option-card-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg></div>
+          <div class="option-card-text">
+            <div class="option-card-title">Enter API Key</div>
+            <div class="option-card-desc">Paste an API key manually</div>
+          </div>
         </button>
       </div>
     `);
@@ -1858,15 +1909,20 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
   // Keys
   async function createKeyModal() {
     openModal('Create Key', `
-      <p class="text-muted" style="margin-bottom:16px;font-size:13px">What kind of key do you need?</p>
-      <div style="display:flex;flex-direction:column;gap:8px">
-        <button class="btn btn-primary" onclick="OS.createApiKeyForm()" style="width:100%;text-align:left;padding:14px 16px">
-          <div style="font-weight:600">API Key</div>
-          <div style="font-size:12px;opacity:0.7;margin-top:2px">Standard OpenAI-compatible key for any app or integration</div>
+      <div class="option-list">
+        <button class="option-card option-primary" onclick="OS.createApiKeyForm()">
+          <div class="option-card-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg></div>
+          <div class="option-card-text">
+            <div class="option-card-title">API Key</div>
+            <div class="option-card-desc">Standard OpenAI-compatible key for any app</div>
+          </div>
         </button>
-        <button class="btn btn-secondary" onclick="OS.createOpenClawKeyForm()" style="width:100%;text-align:left;padding:14px 16px">
-          <div style="font-weight:600">OpenClaw Key</div>
-          <div style="font-size:12px;opacity:0.7;margin-top:2px">Generate key + ready-to-paste config for openclaw.json</div>
+        <button class="option-card" onclick="OS.createOpenClawKeyForm()">
+          <div class="option-card-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg></div>
+          <div class="option-card-text">
+            <div class="option-card-title">OpenClaw Key</div>
+            <div class="option-card-desc">Key + ready-to-paste openclaw.json config</div>
+          </div>
         </button>
       </div>
     `);

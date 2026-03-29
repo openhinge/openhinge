@@ -301,6 +301,41 @@ tr:hover td { background: var(--bg-hover); }
 
 .btn-sm { padding: 4px 10px; font-size: 12px; }
 
+/* ===== Option Cards (modal choice buttons) ===== */
+.option-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 16px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font);
+  transition: border-color 0.15s, background 0.15s;
+}
+.option-card:hover { border-color: var(--primary); background: var(--bg-hover); }
+.option-card.option-primary { border-color: var(--primary); background: rgba(99, 102, 241, 0.08); }
+.option-card.option-primary:hover { background: rgba(99, 102, 241, 0.14); }
+.option-card-icon {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+  flex-shrink: 0;
+  font-size: 16px;
+}
+.option-card.option-primary .option-card-icon { background: rgba(99, 102, 241, 0.18); }
+.option-card-text { min-width: 0; }
+.option-card-title { font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; }
+.option-card-desc { font-size: 12px; color: var(--text-muted); margin-top: 2px; line-height: 1.4; }
+.option-list { display: flex; flex-direction: column; gap: 6px; }
+
 /* ===== Forms ===== */
 .form-group { margin-bottom: 16px; }
 .form-label {
