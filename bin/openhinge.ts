@@ -254,4 +254,40 @@ program.command('update')
     }
   });
 
+// Uninstall command — remove global link, data, and install dir
+program.command('uninstall')
+  .description('Uninstall OpenHinge completely')
+  .action(async () => {
+    const { execSync } = await import('node:child_process');
+    const { resolve } = await import('node:path');
+    const readline = await import('node:readline');
+
+    const root = resolve(import.meta.dirname, '..');
+
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    const answer = await new Promise<string>(r => rl.question('This will remove OpenHinge and all data. Continue? (y/N) ', r));
+    rl.close();
+
+    if (answer.toLowerCase() !== 'y') {
+      console.log('Cancelled.');
+      return;
+    }
+
+    // Remove global npm link
+    console.log('Removing global link...');
+    try {
+      execSync('npm unlink -g openhinge', { cwd: root, stdio: 'pipe' });
+    } catch {
+      // May need sudo
+      try { execSync('sudo npm unlink -g openhinge', { stdio: 'pipe' }); } catch { /* already gone */ }
+    }
+
+    // Remove install directory
+    console.log(`Removing ${root}...`);
+    const { rmSync } = await import('node:fs');
+    rmSync(root, { recursive: true, force: true });
+
+    console.log('OpenHinge uninstalled.');
+  });
+
 program.parse();
