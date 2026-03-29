@@ -30,7 +30,9 @@ export class ClaudeProvider extends BaseProvider {
     };
     if (this.isSubscription || this.config.credentials.oauth_token) {
       h['authorization'] = `Bearer ${this.apiKey}`;
-      h['anthropic-beta'] = 'oauth-2025-04-20';
+      h['anthropic-beta'] = 'claude-code-20250219,oauth-2025-04-20';
+      h['user-agent'] = 'claude-cli/2.1.62';
+      h['x-app'] = 'cli';
     } else {
       h['x-api-key'] = this.apiKey;
     }
@@ -39,8 +41,7 @@ export class ClaudeProvider extends BaseProvider {
 
   defaultModel(): string {
     if (this.config.config.default_model) return this.config.config.default_model as string;
-    // Subscription OAuth tokens may not support newest models — use a reliable default
-    return this.isSubscription ? 'claude-haiku-4-5-20251001' : 'claude-sonnet-4-6';
+    return 'claude-sonnet-4-6';
   }
 
   // OAuth refresh using refresh_token — works on any platform
@@ -53,14 +54,15 @@ export class ClaudeProvider extends BaseProvider {
     }
 
     try {
-      const res = await fetch('https://console.anthropic.com/v1/oauth/token', {
+      const res = await fetch('https://platform.claude.com/v1/oauth/token', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           grant_type: 'refresh_token',
           refresh_token: refreshToken,
           client_id: clientId,
-        }).toString(),
+          scope: 'user:profile user:inference',
+        }),
       });
 
       if (!res.ok) {
@@ -101,7 +103,13 @@ export class ClaudeProvider extends BaseProvider {
       messages,
       max_tokens: params.max_tokens || 4096,
     };
-    if (systemMsg) body.system = systemMsg.content;
+    // Subscription tokens require Claude Code identity in system prompt
+    if (this.isSubscription) {
+      const ccIdentity = "You are Claude Code, Anthropic's official CLI for Claude.";
+      body.system = systemMsg ? `${ccIdentity}\n\n${systemMsg.content}` : ccIdentity;
+    } else if (systemMsg) {
+      body.system = systemMsg.content;
+    }
     if (params.temperature !== undefined) body.temperature = params.temperature;
     if (params.stop) body.stop_sequences = params.stop;
     if (params.response_schema) {
@@ -163,7 +171,12 @@ export class ClaudeProvider extends BaseProvider {
       max_tokens: params.max_tokens || 4096,
       stream: true,
     };
-    if (systemMsg) body.system = systemMsg.content;
+    if (this.isSubscription) {
+      const ccIdentity = "You are Claude Code, Anthropic's official CLI for Claude.";
+      body.system = systemMsg ? `${ccIdentity}\n\n${systemMsg.content}` : ccIdentity;
+    } else if (systemMsg) {
+      body.system = systemMsg.content;
+    }
     if (params.temperature !== undefined) body.temperature = params.temperature;
 
     const res = await this.fetchWithRefresh(`${this.baseUrl}/v1/messages`, {
