@@ -19,18 +19,100 @@ const OS = (() => {
     showWelcome();
   }
 
-  function showWelcome() {
+  async function showWelcome() {
     document.getElementById('app').style.display = 'none';
     document.getElementById('welcome-screen').classList.remove('hidden');
-    const input = document.getElementById('welcome-token');
-    input.value = '';
-    input.focus();
     document.getElementById('welcome-error').classList.add('hidden');
     document.getElementById('welcome-login').classList.remove('hidden');
     document.getElementById('welcome-setup').classList.add('hidden');
+
+    // Hide all auth forms first
+    document.getElementById('welcome-setup-pw').classList.add('hidden');
+    document.getElementById('welcome-enter-pw').classList.add('hidden');
+    document.getElementById('welcome-enter-token').classList.add('hidden');
+
+    try {
+      const res = await fetch('/admin/auth/status');
+      const data = await res.json();
+      if (!data.hasPassword && !data.hasLegacyToken) {
+        // No auth set — show set password form
+        document.getElementById('welcome-setup-pw').classList.remove('hidden');
+        document.getElementById('welcome-new-pw').focus();
+      } else if (data.hasLegacyToken) {
+        // Legacy admin token mode
+        document.getElementById('welcome-enter-token').classList.remove('hidden');
+        document.getElementById('welcome-token').focus();
+      } else {
+        // Password mode
+        document.getElementById('welcome-enter-pw').classList.remove('hidden');
+        document.getElementById('welcome-pw').focus();
+      }
+    } catch {
+      // Can't reach server — show password form as default
+      document.getElementById('welcome-enter-pw').classList.remove('hidden');
+      document.getElementById('welcome-pw').focus();
+    }
+  }
+
+  async function welcomeSetup() {
+    const input = document.getElementById('welcome-new-pw');
+    const pw = input.value.trim();
+    const errEl = document.getElementById('welcome-error');
+    if (!pw || pw.length < 4) { errEl.textContent = 'Password must be at least 4 characters'; errEl.classList.remove('hidden'); return; }
+
+    try {
+      const res = await fetch('/admin/auth/setup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: pw }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        errEl.textContent = data.error || 'Setup failed';
+        errEl.classList.remove('hidden');
+        return;
+      }
+      const data = await res.json();
+      token = data.token;
+      localStorage.setItem('oh_token', data.token);
+      errEl.classList.add('hidden');
+      welcomeGo();
+    } catch {
+      errEl.textContent = 'Could not connect to server';
+      errEl.classList.remove('hidden');
+    }
   }
 
   async function welcomeLogin() {
+    const input = document.getElementById('welcome-pw');
+    const pw = input.value.trim();
+    const errEl = document.getElementById('welcome-error');
+    if (!pw) { errEl.textContent = 'Enter your password'; errEl.classList.remove('hidden'); return; }
+
+    try {
+      const res = await fetch('/admin/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: pw }),
+      });
+      if (!res.ok) {
+        errEl.textContent = 'Wrong password';
+        errEl.classList.remove('hidden');
+        input.select();
+        return;
+      }
+      const data = await res.json();
+      token = data.token;
+      localStorage.setItem('oh_token', data.token);
+      errEl.classList.add('hidden');
+      welcomeGo();
+    } catch {
+      errEl.textContent = 'Could not connect to server';
+      errEl.classList.remove('hidden');
+    }
+  }
+
+  async function welcomeLegacyLogin() {
     const input = document.getElementById('welcome-token');
     const t = input.value.trim();
     const errEl = document.getElementById('welcome-error');
@@ -43,17 +125,15 @@ const OS = (() => {
         body: JSON.stringify({ token: t }),
       });
       if (!res.ok) {
-        errEl.textContent = 'Invalid token. Check config/openhinge.json for the correct token.';
+        errEl.textContent = 'Invalid token';
         errEl.classList.remove('hidden');
         input.select();
         return;
       }
       const data = await res.json();
-      token = t;
-      localStorage.setItem('oh_token', t);
+      token = data.token;
+      localStorage.setItem('oh_token', data.token);
       errEl.classList.add('hidden');
-
-      // Go straight to dashboard
       welcomeGo();
     } catch {
       errEl.textContent = 'Could not connect to server';
@@ -68,9 +148,15 @@ const OS = (() => {
     navigate(titles[startPage] ? startPage : 'dashboard', false);
   }
 
-  // Enter key on token input
-  document.getElementById('welcome-token')?.addEventListener('keydown', e => {
+  // Enter key on auth inputs
+  document.getElementById('welcome-new-pw')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') welcomeSetup();
+  });
+  document.getElementById('welcome-pw')?.addEventListener('keydown', e => {
     if (e.key === 'Enter') welcomeLogin();
+  });
+  document.getElementById('welcome-token')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') welcomeLegacyLogin();
   });
 
   // ===== Toast =====
@@ -715,6 +801,21 @@ const OS = (() => {
           </div>
           <div class="separator"></div>
           <button type="submit" class="btn btn-primary">Save Settings</button>
+        </form>
+      </div>
+
+      <div class="card mt-4" style="max-width:600px">
+        <form onsubmit="OS.changePassword(event)">
+          <div class="card-header"><h3>Change Password</h3></div>
+          <div class="form-group">
+            <label class="form-label">Current Password</label>
+            <input type="password" name="current_password" autocomplete="current-password">
+          </div>
+          <div class="form-group">
+            <label class="form-label">New Password</label>
+            <input type="password" name="new_password" autocomplete="new-password" placeholder="Min 4 characters">
+          </div>
+          <button type="submit" class="btn btn-primary">Change Password</button>
         </form>
       </div>
 
@@ -2266,6 +2367,27 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
     toast('Settings saved', 'success');
   }
 
+  async function changePassword(e) {
+    e.preventDefault();
+    const f = new FormData(e.target);
+    const current_password = f.get('current_password');
+    const new_password = f.get('new_password');
+    if (!new_password || new_password.length < 4) { toast('Password must be at least 4 characters', 'error'); return; }
+    try {
+      const res = await fetch('/admin/auth/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ current_password, new_password }),
+      });
+      const data = await res.json();
+      if (!res.ok) { toast(data.error || 'Failed', 'error'); return; }
+      token = data.token;
+      localStorage.setItem('oh_token', data.token);
+      toast('Password changed', 'success');
+      e.target.reset();
+    } catch { toast('Could not connect', 'error'); }
+  }
+
   // ===== Init =====
   async function init() {
     // Check server health
@@ -2288,12 +2410,11 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
       return;
     }
 
-    // Validate stored token is still valid
+    // Validate stored session token
     try {
-      const res = await fetch('/admin/auth/login', {
+      const res = await fetch('/admin/auth/verify', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token }),
+        headers: { 'Authorization': `Bearer ${token}` },
       });
       if (!res.ok) {
         token = '';
@@ -2392,11 +2513,11 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
   init();
 
   return {
-    closeModal, toast, navigate, welcomeLogin, welcomeGo,
+    closeModal, toast, navigate, welcomeLogin, welcomeSetup, welcomeLegacyLogin, welcomeGo,
     addProviderModal, addProviderStep2, showApiKeyForm, showClaudeOauthForm, saveClaudeOauth, claudeOAuthLogin, saveProvider, editProviderModal, updateProvider, deleteProvider, healthCheck, healthCheckOne, fetchModels, onProviderTypeChange, quickAdd, openApiPage,
     addSoulModal, saveSoul, editSoulModal, deleteSoul, onSoulProviderChange,
     createKeyModal, createApiKeyForm, createOpenClawKeyForm, saveOpenClawKey, saveKey, revokeKey, deleteKey, toggleAllSouls,
-    saveCloudflare, saveSettings, scrollDoc,
+    saveCloudflare, saveSettings, changePassword, scrollDoc,
     cfConnect, cfZoneChange,
     provFilter, provClearFilters, provToggle, provSelectAll, provSelectNone, provBulk,
     logFilter, logSort, logPage, logClearFilters, logDetail,

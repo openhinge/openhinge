@@ -11,8 +11,9 @@ export const configSchema = z.object({
   }).default({}),
 
   auth: z.object({
-    adminToken: z.string().min(16, 'Admin token must be at least 16 characters'),
-  }),
+    adminToken: z.string().min(16).optional(),
+    passwordHash: z.string().optional(),
+  }).default({}),
 
   encryption: z.object({
     key: z.string().min(32, 'Encryption key must be at least 32 characters'),

@@ -67,8 +67,11 @@ export async function createServer(config: Config) {
   await app.register(chatRoutes);
   await app.register(modelsRoutes);
 
-  // Admin routes (admin token auth)
-  const adminAuth = adminAuthMiddleware(config.auth.adminToken);
+  // Public system routes (health, auth status, login, setup)
+  await app.register((r) => systemAdminRoutes(r, config));
+
+  // Admin routes (password/token auth)
+  const adminAuth = adminAuthMiddleware(() => config.auth);
   await app.register(async (adminApp) => {
     adminApp.addHook('preHandler', adminAuth);
     await adminApp.register((r) => providerAdminRoutes(r, config));
@@ -77,9 +80,6 @@ export async function createServer(config: Config) {
     await adminApp.register(costAdminRoutes);
     await adminApp.register(settingsAdminRoutes);
   });
-
-  // System routes (health is public, status requires admin)
-  await app.register((r) => systemAdminRoutes(r, config));
 
   // Root redirect to dashboard
   app.get('/', async (request, reply) => {

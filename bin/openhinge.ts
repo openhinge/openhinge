@@ -32,13 +32,12 @@ program.command('init')
       mkdirSync(configDir, { recursive: true });
       const config = {
         server: { host: '127.0.0.1', port: 3700 },
-        auth: { adminToken: randomBytes(24).toString('hex') },
+        auth: {},
         encryption: { key: randomBytes(32).toString('hex') },
       };
       writeFileSync(configPath, JSON.stringify(config, null, 2));
       console.log('Created config/openhinge.json');
-      console.log(`Admin token: ${config.auth.adminToken}`);
-      console.log('Save this token — you need it for admin API access.');
+      console.log('Open the dashboard to set your password.');
     }
 
     // Run migrations

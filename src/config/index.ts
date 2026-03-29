@@ -19,6 +19,7 @@ export function loadConfig(): Config {
     },
     auth: {
       adminToken: process.env.OPENHINGE_ADMIN_TOKEN,
+      passwordHash: process.env.OPENHINGE_PASSWORD_HASH,
     },
     encryption: {
       key: process.env.OPENHINGE_ENCRYPTION_KEY,
@@ -39,13 +40,12 @@ export function loadConfig(): Config {
     } catch (err) {
       logger.warn({ err, path: configPath }, 'Failed to parse config file, using env only');
     }
-  } else if (!process.env.OPENHINGE_ADMIN_TOKEN) {
-    // First run — auto-generate config
-    const adminToken = randomBytes(24).toString('hex');
+  } else {
+    // First run — auto-generate config (no admin token, user sets password in dashboard)
     const encryptionKey = randomBytes(32).toString('hex');
     const newConfig = {
       server: { host: '127.0.0.1', port: 3700 },
-      auth: { adminToken },
+      auth: {},
       encryption: { key: encryptionKey },
     };
 
@@ -53,7 +53,6 @@ export function loadConfig(): Config {
     writeFileSync(configPath, JSON.stringify(newConfig, null, 2));
 
     // Auto-create .env with Gemini OAuth credentials if missing
-    // These are Google's public Cloud Code OAuth client (same as gcloud CLI)
     const envPath = resolve(process.cwd(), '.env');
     if (!existsSync(envPath)) {
       const gp = ['681255809395', 'oo8ft2oprdrnp9e3aqf6av3hmdib135j'].join('-');
@@ -64,12 +63,7 @@ export function loadConfig(): Config {
 
     logger.info('');
     logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    logger.info('  First run detected — config auto-generated');
-    logger.info('');
-    logger.info(`  Admin token: ${adminToken}`);
-    logger.info('');
-    logger.info('  Paste this token in the dashboard to log in.');
-    logger.info('  Saved to config/openhinge.json');
+    logger.info('  First run — open the dashboard to set your password');
     logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     logger.info('');
 
@@ -114,6 +108,19 @@ function stripUndefined(obj: Record<string, unknown>): void {
       }
     }
   }
+}
+
+export function savePasswordHash(hash: string): void {
+  const configDir = resolve(process.cwd(), 'config');
+  const configPath = resolve(configDir, 'openhinge.json');
+  let fileConfig: Record<string, any> = {};
+  if (existsSync(configPath)) {
+    try { fileConfig = JSON.parse(readFileSync(configPath, 'utf8')); } catch { /* */ }
+  }
+  if (!fileConfig.auth) fileConfig.auth = {};
+  fileConfig.auth.passwordHash = hash;
+  delete fileConfig.auth.adminToken; // remove legacy token
+  writeFileSync(configPath, JSON.stringify(fileConfig, null, 2));
 }
 
 export type { Config };

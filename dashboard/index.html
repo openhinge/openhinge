@@ -133,15 +133,36 @@
       <p class="welcome-sub">Self-hosted AI gateway for Claude, OpenAI, Gemini &amp; Ollama</p>
 
       <div id="welcome-login">
-        <label class="welcome-label">Admin Token</label>
-        <div class="welcome-input-row">
-          <input type="password" id="welcome-token" class="welcome-input" placeholder="Paste your admin token" autocomplete="off" spellcheck="false">
-          <button class="btn btn-primary welcome-btn" onclick="OS.welcomeLogin()">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-          </button>
+        <div id="welcome-setup-pw" class="hidden">
+          <label class="welcome-label">Set a password</label>
+          <div class="welcome-input-row">
+            <input type="password" id="welcome-new-pw" class="welcome-input" placeholder="Choose a password" autocomplete="new-password">
+            <button class="btn btn-primary welcome-btn" onclick="OS.welcomeSetup()">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </button>
+          </div>
+          <p class="welcome-hint">This password protects your dashboard. You can change it later in settings.</p>
+        </div>
+        <div id="welcome-enter-pw" class="hidden">
+          <label class="welcome-label">Password</label>
+          <div class="welcome-input-row">
+            <input type="password" id="welcome-pw" class="welcome-input" placeholder="Enter your password" autocomplete="current-password">
+            <button class="btn btn-primary welcome-btn" onclick="OS.welcomeLogin()">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </button>
+          </div>
+        </div>
+        <div id="welcome-enter-token" class="hidden">
+          <label class="welcome-label">Admin Token</label>
+          <div class="welcome-input-row">
+            <input type="password" id="welcome-token" class="welcome-input" placeholder="Paste your admin token" autocomplete="off" spellcheck="false">
+            <button class="btn btn-primary welcome-btn" onclick="OS.welcomeLegacyLogin()">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </button>
+          </div>
+          <p class="welcome-hint">Legacy mode — after login you can set a password in settings</p>
         </div>
         <p id="welcome-error" class="welcome-error hidden"></p>
-        <p class="welcome-hint">Your token was printed in the terminal when you ran <code>npm start</code>. It's also saved in <code>config/openhinge.json</code></p>
       </div>
 
       <div id="welcome-setup" class="hidden">
