@@ -49,7 +49,13 @@ echo -e "${GREEN}✓${RESET} npm $(npm -v)"
 
 # ── Check git ──────────────────────────────────────────────────
 if ! command -v git &>/dev/null; then
-  echo -e "${RED}✗${RESET} git not found"
+  echo -e "${RED}✗${RESET} git is not installed."
+  echo ""
+  echo "  Install git:"
+  echo "    macOS:  xcode-select --install"
+  echo "    Ubuntu: sudo apt install git"
+  echo "    Windows: https://git-scm.com/download/win"
+  echo ""
   exit 1
 fi
 echo -e "${GREEN}✓${RESET} git $(git --version | awk '{print $3}')"
