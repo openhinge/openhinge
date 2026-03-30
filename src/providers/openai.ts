@@ -241,6 +241,10 @@ export class OpenAIProvider extends BaseProvider {
     };
     if (params.temperature !== undefined) body.temperature = params.temperature;
     if (params.top_p !== undefined) body.top_p = params.top_p;
+    if (params.frequency_penalty !== undefined) body.frequency_penalty = params.frequency_penalty;
+    if (params.presence_penalty !== undefined) body.presence_penalty = params.presence_penalty;
+    if (params.seed !== undefined) body.seed = params.seed;
+    if (params.user) body.user = params.user;
     if (params.stop) body.stop = params.stop;
     if (params.tools && params.tools.length > 0) {
       // Normalize to OpenAI format
@@ -308,6 +312,10 @@ export class OpenAIProvider extends BaseProvider {
     };
     if (params.temperature !== undefined) body.temperature = params.temperature;
     if (params.top_p !== undefined) body.top_p = params.top_p;
+    if (params.frequency_penalty !== undefined) body.frequency_penalty = params.frequency_penalty;
+    if (params.presence_penalty !== undefined) body.presence_penalty = params.presence_penalty;
+    if (params.seed !== undefined) body.seed = params.seed;
+    if (params.user) body.user = params.user;
     if (params.tools && params.tools.length > 0) {
       body.tools = params.tools.map(t => {
         if (t.function) return { type: 'function', function: t.function };

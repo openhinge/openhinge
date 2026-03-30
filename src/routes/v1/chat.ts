@@ -62,12 +62,20 @@ interface ChatBody {
   messages: ChatMessage[];
   temperature?: number;
   max_tokens?: number;
+  max_completion_tokens?: number;
   stream?: boolean;
   stop?: string[];
   response_schema?: JsonSchema;
+  response_format?: { type: string; json_schema?: { name?: string; schema?: JsonSchema; strict?: boolean } };
   tools?: ToolDefinition[];
   tool_choice?: unknown;
   top_p?: number;
+  frequency_penalty?: number;
+  presence_penalty?: number;
+  seed?: number;
+  user?: string;
+  n?: number;
+  parallel_tool_calls?: boolean;
 }
 
 export async function chatRoutes(app: FastifyInstance): Promise<void> {
@@ -139,17 +147,26 @@ async function handleChat(request: FastifyRequest<{ Params?: { slug?: string }; 
     try { responseSchema = JSON.parse(soul.response_schema); } catch { /* invalid schema stored */ }
   }
 
+  // Resolve response schema: response_format.json_schema takes priority (OpenAI format)
+  if (!responseSchema && body.response_format?.type === 'json_schema' && body.response_format.json_schema?.schema) {
+    responseSchema = body.response_format.json_schema.schema;
+  }
+
   const chatParams = {
     messages,
     model: body.model || soul?.model || undefined,
     temperature: body.temperature ?? soul?.temperature,
-    max_tokens: body.max_tokens ?? soul?.max_tokens,
+    max_tokens: body.max_completion_tokens || body.max_tokens || soul?.max_tokens,
     stream: body.stream,
     stop: body.stop,
     response_schema: responseSchema,
     tools: body.tools,
     tool_choice: body.tool_choice,
     top_p: body.top_p,
+    frequency_penalty: body.frequency_penalty,
+    presence_penalty: body.presence_penalty,
+    seed: body.seed,
+    user: body.user,
   };
 
   if (body.stream) {

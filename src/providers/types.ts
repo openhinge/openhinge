@@ -14,12 +14,13 @@ export interface JsonSchema {
 }
 
 export interface ToolDefinition {
-  type?: 'function';
+  type?: string;  // 'function' (OpenAI), 'custom' (Anthropic), or server tool types
   function?: { name: string; description?: string; parameters?: JsonSchema };
   // Anthropic format
   name?: string;
   description?: string;
   input_schema?: JsonSchema;
+  [key: string]: unknown;  // Allow pass-through of extra fields (cache_control, allowed_callers, etc.)
 }
 
 export interface ToolCall {
@@ -41,7 +42,14 @@ export interface ChatRequest {
   top_p?: number;
   top_k?: number;
   metadata?: { user_id?: string };
-  thinking?: { type: string; budget_tokens?: number };
+  thinking?: { type: string; budget_tokens?: number; display?: string };
+  // OpenAI-specific params (passed through to OpenAI provider)
+  frequency_penalty?: number;
+  presence_penalty?: number;
+  seed?: number;
+  user?: string;
+  // Anthropic-specific params (passed through to Claude provider)
+  service_tier?: string;
 }
 
 export interface FallbackAttempt {
@@ -49,6 +57,13 @@ export interface FallbackAttempt {
   provider_name: string;
   error: string;
   latency_ms: number;
+}
+
+export interface ThinkingBlock {
+  type: 'thinking' | 'redacted_thinking';
+  thinking?: string;
+  data?: string;
+  signature?: string;
 }
 
 export interface ChatResponse {
@@ -59,7 +74,10 @@ export interface ChatResponse {
   output_tokens: number;
   finish_reason: string;
   tool_calls?: ToolCall[];
+  thinking?: ThinkingBlock[];
   fallback_attempts?: FallbackAttempt[];
+  cache_creation_input_tokens?: number;
+  cache_read_input_tokens?: number;
 }
 
 export interface ChatChunk {

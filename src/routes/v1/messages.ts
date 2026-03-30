@@ -8,22 +8,38 @@ import { logUsage } from '../../cost/index.js';
 import { calculateCostCents } from '../../utils/tokens.js';
 import { generateId } from '../../utils/crypto.js';
 import { NotFoundError, OpenHingeError } from '../../utils/errors.js';
-import type { ChatMessage, ToolDefinition } from '../../providers/types.js';
+import type { ChatMessage, ToolDefinition, ThinkingBlock } from '../../providers/types.js';
+
+interface AnthropicContentBlock {
+  type: string;
+  text?: string;
+  id?: string;
+  name?: string;
+  input?: unknown;
+  tool_use_id?: string;
+  content?: string | Array<{ type: string; text?: string }>;  // tool_result content
+  thinking?: string;      // thinking block
+  signature?: string;     // thinking block signature
+  data?: string;          // redacted_thinking
+  source?: unknown;       // image/document source
+  cache_control?: unknown;
+}
 
 interface AnthropicBody {
   model?: string;
-  messages: Array<{ role: string; content: string | Array<{ type: string; text?: string; id?: string; name?: string; input?: unknown; tool_use_id?: string }> }>;
-  system?: string | Array<{ type: string; text: string }>;
+  messages: Array<{ role: string; content: string | AnthropicContentBlock[] }>;
+  system?: string | Array<{ type: string; text: string; cache_control?: unknown }>;
   max_tokens: number;
   temperature?: number;
   stream?: boolean;
   stop_sequences?: string[];
-  tools?: Array<{ name: string; description?: string; input_schema?: unknown }>;
+  tools?: Array<{ name?: string; type?: string; description?: string; input_schema?: unknown; [key: string]: unknown }>;
   tool_choice?: unknown;
   top_p?: number;
   top_k?: number;
   metadata?: { user_id?: string };
-  thinking?: { type: string; budget_tokens?: number };
+  thinking?: { type: string; budget_tokens?: number; display?: string };
+  service_tier?: string;
 }
 
 export async function messagesRoutes(app: FastifyInstance): Promise<void> {
@@ -41,6 +57,17 @@ export async function messagesRoutes(app: FastifyInstance): Promise<void> {
 function extractTextContent(content: string | Array<{ type: string; text?: string }>): string {
   if (typeof content === 'string') return content;
   return content.filter(b => b.type === 'text').map(b => b.text || '').join('');
+}
+
+function extractToolResultContent(tr: AnthropicContentBlock): string {
+  // tool_result has a `content` field (not `text`) — can be string or array of content blocks
+  if (typeof tr.content === 'string') return tr.content;
+  if (Array.isArray(tr.content)) {
+    return tr.content.filter(b => b.type === 'text').map(b => b.text || '').join('');
+  }
+  // Fallback: check text field in case of non-standard format
+  if (typeof tr.text === 'string') return tr.text;
+  return '';
 }
 
 function convertAnthropicMessages(msgs: AnthropicBody['messages']): ChatMessage[] {
@@ -67,11 +94,11 @@ function convertAnthropicMessages(msgs: AnthropicBody['messages']): ChatMessage[
         })),
       });
     } else if (toolResultParts.length > 0) {
-      // Tool results
+      // Tool results — content is in the `content` field, not `text`
       for (const tr of toolResultParts) {
         out.push({
           role: 'tool',
-          content: typeof tr.text === 'string' ? tr.text : JSON.stringify(tr.text || ''),
+          content: extractToolResultContent(tr),
           tool_call_id: tr.tool_use_id,
         });
       }
@@ -140,8 +167,9 @@ async function handleMessages(
     throw new OpenHingeError('No providers configured', 503, 'NO_PROVIDERS');
   }
 
-  // Convert Anthropic tools format
+  // Pass tools through — supports custom tools and server tools (web_search, code_execution, etc.)
   const tools: ToolDefinition[] | undefined = body.tools?.map(t => ({
+    ...t,
     name: t.name,
     description: t.description,
     input_schema: t.input_schema as any,
@@ -159,6 +187,7 @@ async function handleMessages(
     top_k: body.top_k,
     metadata: body.metadata,
     thinking: body.thinking,
+    service_tier: body.service_tier,
   };
 
   if (body.stream) {
@@ -226,16 +255,21 @@ async function handleMessages(
           })}\n\n`);
           blockIndex++;
 
-          // Emit tool_use blocks if present
+          // Emit tool_use blocks with proper input_json_delta events
           if (chunk.tool_calls?.length) {
             for (const tc of chunk.tool_calls) {
-              let input: unknown = {};
-              try { input = JSON.parse(tc.function.arguments); } catch {}
-
+              // content_block_start with empty input (Anthropic pattern)
               reply.raw.write(`event: content_block_start\ndata: ${JSON.stringify({
                 type: 'content_block_start',
                 index: blockIndex,
-                content_block: { type: 'tool_use', id: tc.id, name: tc.function.name, input },
+                content_block: { type: 'tool_use', id: tc.id, name: tc.function.name, input: {} },
+              })}\n\n`);
+              // Emit input as input_json_delta
+              const argsStr = tc.function.arguments || '{}';
+              reply.raw.write(`event: content_block_delta\ndata: ${JSON.stringify({
+                type: 'content_block_delta',
+                index: blockIndex,
+                delta: { type: 'input_json_delta', partial_json: argsStr },
               })}\n\n`);
               reply.raw.write(`event: content_block_stop\ndata: ${JSON.stringify({
                 type: 'content_block_stop',
@@ -301,6 +335,16 @@ async function handleMessages(
 
     // Build content blocks
     const contentBlocks: any[] = [];
+    // Include thinking blocks before text (matches Anthropic response order)
+    if (response.thinking?.length) {
+      for (const tb of response.thinking) {
+        if (tb.type === 'thinking') {
+          contentBlocks.push({ type: 'thinking', thinking: tb.thinking, signature: tb.signature });
+        } else if (tb.type === 'redacted_thinking') {
+          contentBlocks.push({ type: 'redacted_thinking', data: tb.data });
+        }
+      }
+    }
     if (response.content) {
       contentBlocks.push({ type: 'text', text: response.content });
     }
@@ -313,6 +357,13 @@ async function handleMessages(
       }
     }
 
+    const usage: Record<string, number> = {
+      input_tokens: response.input_tokens,
+      output_tokens: response.output_tokens,
+    };
+    if (response.cache_creation_input_tokens) usage.cache_creation_input_tokens = response.cache_creation_input_tokens;
+    if (response.cache_read_input_tokens) usage.cache_read_input_tokens = response.cache_read_input_tokens;
+
     reply.send({
       id: msgId,
       type: 'message',
@@ -321,10 +372,7 @@ async function handleMessages(
       model: response.model,
       stop_reason: mapStopReason(response.finish_reason, !!response.tool_calls?.length),
       stop_sequence: null,
-      usage: {
-        input_tokens: response.input_tokens,
-        output_tokens: response.output_tokens,
-      },
+      usage,
     });
   } catch (err: any) {
     logUsage({

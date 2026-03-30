@@ -1,5 +1,5 @@
 import { BaseProvider } from './base.js';
-import type { ChatRequest, ChatResponse, ChatChunk, HealthStatus, ToolCall } from './types.js';
+import type { ChatRequest, ChatResponse, ChatChunk, HealthStatus, ToolCall, ThinkingBlock } from './types.js';
 import { ProviderError } from '../utils/errors.js';
 import { generateId } from '../utils/crypto.js';
 import { logger } from '../utils/logger.js';
@@ -173,6 +173,7 @@ export class ClaudeProvider extends BaseProvider {
     if (params.top_k !== undefined) body.top_k = params.top_k;
     if (params.metadata) body.metadata = params.metadata;
     if (params.thinking) body.thinking = params.thinking;
+    if (params.service_tier) body.service_tier = params.service_tier;
 
     // Tools: client-provided tools take priority, then response_schema fallback
     if (params.tools && params.tools.length > 0) {
@@ -241,6 +242,18 @@ export class ClaudeProvider extends BaseProvider {
       }));
     }
 
+    // Extract thinking blocks
+    let thinking: ThinkingBlock[] | undefined;
+    const thinkingBlocks = (data.content || []).filter((b: any) => b.type === 'thinking' || b.type === 'redacted_thinking');
+    if (thinkingBlocks.length > 0) {
+      thinking = thinkingBlocks.map((b: any) => ({
+        type: b.type,
+        thinking: b.thinking,
+        signature: b.signature,
+        data: b.data,
+      }));
+    }
+
     return {
       id: data.id || generateId(),
       model: data.model || model,
@@ -249,6 +262,9 @@ export class ClaudeProvider extends BaseProvider {
       output_tokens: data.usage?.output_tokens || 0,
       finish_reason: data.stop_reason || 'end_turn',
       tool_calls: toolCalls,
+      thinking,
+      cache_creation_input_tokens: data.usage?.cache_creation_input_tokens,
+      cache_read_input_tokens: data.usage?.cache_read_input_tokens,
     };
   }
 
@@ -276,10 +292,12 @@ export class ClaudeProvider extends BaseProvider {
       body.system = systemMsg.content;
     }
     if (params.temperature !== undefined) body.temperature = params.temperature;
+    if (params.stop) body.stop_sequences = params.stop;
     if (params.top_p !== undefined) body.top_p = params.top_p;
     if (params.top_k !== undefined) body.top_k = params.top_k;
     if (params.metadata) body.metadata = params.metadata;
     if (params.thinking) body.thinking = params.thinking;
+    if (params.service_tier) body.service_tier = params.service_tier;
 
     // Pass tools through for streaming too
     if (params.tools && params.tools.length > 0) {
