@@ -48,14 +48,36 @@ export abstract class BaseProvider {
   }
 
   /**
-   * Wrapper for fetch that retries once on 401 after attempting token refresh.
+   * Check if the token is expired or about to expire (within 5 min).
+   * If so, attempt a proactive refresh.
+   */
+  protected async ensureFreshToken(): Promise<void> {
+    const expiresAt = this.config.credentials.expires_at;
+    if (!expiresAt) return;
+
+    const expiresMs = Number(expiresAt);
+    const bufferMs = 5 * 60 * 1000; // refresh 5 min before expiry
+    if (Date.now() + bufferMs >= expiresMs) {
+      logger.info({ id: this.config.id, type: this.type }, 'Token expiring soon, proactively refreshing');
+      await this.refreshToken();
+    }
+  }
+
+  /**
+   * Wrapper for fetch that proactively refreshes expiring tokens
+   * and retries once on 401 after attempting token refresh.
    */
   protected async fetchWithRefresh(url: string, init: RequestInit): Promise<Response> {
-    const res = await fetch(url, init);
+    // Proactive refresh before the request
+    await this.ensureFreshToken();
+
+    // Rebuild headers in case token was just refreshed
+    const freshInit = { ...init, headers: this.buildAuthHeaders() };
+    const res = await fetch(url, freshInit);
+
     if (res.status === 401) {
       const refreshed = await this.refreshToken();
       if (refreshed) {
-        // Rebuild headers with new token and retry
         const newInit = { ...init, headers: this.buildAuthHeaders() };
         return fetch(url, newInit);
       }
