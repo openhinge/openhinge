@@ -15,6 +15,119 @@ program
   .description('OpenHinge AI Gateway CLI')
   .version('0.1.0');
 
+// Start command — start the gateway server
+program.command('start')
+  .description('Start the OpenHinge gateway server')
+  .option('-d, --daemon', 'Run in background')
+  .action(async (opts) => {
+    const { resolve } = await import('node:path');
+    const { existsSync } = await import('node:fs');
+
+    let root = resolve(import.meta.dirname, '..');
+    if (!existsSync(resolve(root, 'package.json'))) root = resolve(root, '..');
+    const entry = resolve(root, 'dist/src/index.js');
+
+    if (!existsSync(entry)) {
+      console.error('Server not built. Run: npm run build');
+      process.exit(1);
+    }
+
+    // Check if already running
+    const { execSync } = await import('node:child_process');
+    try {
+      const pids = execSync('lsof -ti:3700', { encoding: 'utf-8' }).trim();
+      if (pids) {
+        console.log('OpenHinge is already running on port 3700.');
+        return;
+      }
+    } catch { /* not running */ }
+
+    if (opts.daemon) {
+      const { spawn } = await import('node:child_process');
+      const logFile = resolve(root, 'data/openhinge.log');
+      const { openSync } = await import('node:fs');
+      const out = openSync(logFile, 'a');
+      const server = spawn('node', [entry], {
+        cwd: root,
+        detached: true,
+        stdio: ['ignore', out, out],
+      });
+      server.unref();
+      console.log(`OpenHinge started in background (PID ${server.pid})`);
+      console.log(`Dashboard: http://127.0.0.1:3700/dashboard/`);
+      console.log(`Logs: ${logFile}`);
+    } else {
+      const { spawn } = await import('node:child_process');
+      const server = spawn('node', [entry], {
+        cwd: root,
+        stdio: 'inherit',
+      });
+      server.on('exit', (code) => process.exit(code || 0));
+
+      // Forward signals
+      process.on('SIGINT', () => server.kill('SIGINT'));
+      process.on('SIGTERM', () => server.kill('SIGTERM'));
+    }
+  });
+
+// Stop command — stop the gateway server
+program.command('stop')
+  .description('Stop the OpenHinge gateway server')
+  .action(async () => {
+    const { execSync } = await import('node:child_process');
+    try {
+      const pids = execSync('lsof -ti:3700', { encoding: 'utf-8' }).trim();
+      if (!pids) {
+        console.log('OpenHinge is not running.');
+        return;
+      }
+      for (const pid of pids.split('\n')) {
+        try { process.kill(parseInt(pid), 'SIGTERM'); } catch { /* already dead */ }
+      }
+      console.log('OpenHinge stopped.');
+    } catch {
+      console.log('OpenHinge is not running.');
+    }
+  });
+
+// Restart command
+program.command('restart')
+  .description('Restart the OpenHinge gateway server')
+  .action(async () => {
+    const { execSync } = await import('node:child_process');
+    const { resolve } = await import('node:path');
+    const { existsSync, openSync } = await import('node:fs');
+    const { spawn } = await import('node:child_process');
+
+    let root = resolve(import.meta.dirname, '..');
+    if (!existsSync(resolve(root, 'package.json'))) root = resolve(root, '..');
+    const entry = resolve(root, 'dist/src/index.js');
+
+    // Stop
+    try {
+      const pids = execSync('lsof -ti:3700', { encoding: 'utf-8' }).trim();
+      if (pids) {
+        for (const pid of pids.split('\n')) {
+          try { process.kill(parseInt(pid), 'SIGTERM'); } catch { /* */ }
+        }
+        console.log('Stopped existing server.');
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    } catch { /* wasn't running */ }
+
+    // Start in background
+    const logFile = resolve(root, 'data/openhinge.log');
+    const out = openSync(logFile, 'a');
+    const server = spawn('node', [entry], {
+      cwd: root,
+      detached: true,
+      stdio: ['ignore', out, out],
+    });
+    server.unref();
+    console.log(`OpenHinge restarted (PID ${server.pid})`);
+    console.log(`Dashboard: http://127.0.0.1:3700/dashboard/`);
+  });
+
 // Init command — generates config and runs migrations
 program.command('init')
   .description('Initialize OpenHinge (create config, run migrations)')
