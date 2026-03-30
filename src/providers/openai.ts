@@ -2,6 +2,7 @@ import { BaseProvider } from './base.js';
 import type { ChatRequest, ChatResponse, ChatChunk, HealthStatus } from './types.js';
 import { ProviderError } from '../utils/errors.js';
 import { generateId } from '../utils/crypto.js';
+import { logger } from '../utils/logger.js';
 
 export class OpenAIProvider extends BaseProvider {
   readonly type = 'openai';
@@ -44,8 +45,25 @@ export class OpenAIProvider extends BaseProvider {
     return (this.config.config.default_model as string) || 'gpt-4o';
   }
 
-  // Refresh OpenAI OAuth token using stored refresh_token
+  // Refresh OpenAI OAuth token — try Codex auth file first, then OAuth flow
   async refreshToken(): Promise<boolean> {
+    // Strategy 1: Read from ~/.codex/auth.json (Codex keeps this fresh)
+    try {
+      const { readFileSync } = await import('node:fs');
+      const { join } = await import('node:path');
+      const { homedir } = await import('node:os');
+      const codexAuth = JSON.parse(readFileSync(join(homedir(), '.codex', 'auth.json'), 'utf-8'));
+      if (codexAuth.tokens?.access_token && codexAuth.tokens.access_token !== this.config.credentials.oauth_token) {
+        this.config.credentials.oauth_token = codexAuth.tokens.access_token;
+        if (codexAuth.tokens.refresh_token) this.config.credentials.refresh_token = codexAuth.tokens.refresh_token;
+        this.config.credentials.expires_at = String(Date.now() + 3600 * 1000);
+        this.persistCredentials();
+        logger.info({ id: this.id }, 'OpenAI token refreshed from Codex auth file');
+        return true;
+      }
+    } catch { /* Codex not installed or no auth file */ }
+
+    // Strategy 2: OAuth refresh_token flow
     const refreshToken = this.config.credentials.refresh_token;
     const clientId = this.config.credentials.client_id;
     if (!refreshToken || !clientId) return false;

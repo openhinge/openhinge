@@ -2,6 +2,7 @@ import { BaseProvider } from './base.js';
 import type { ChatRequest, ChatResponse, ChatChunk, HealthStatus } from './types.js';
 import { ProviderError } from '../utils/errors.js';
 import { generateId } from '../utils/crypto.js';
+import { logger } from '../utils/logger.js';
 
 export class GeminiProvider extends BaseProvider {
   readonly type = 'gemini';
@@ -58,6 +59,23 @@ export class GeminiProvider extends BaseProvider {
 
   // Refresh Google OAuth token using stored refresh_token
   async refreshToken(): Promise<boolean> {
+    // Strategy 1: Read from Google ADC file (gcloud keeps this fresh)
+    try {
+      const { readFileSync } = await import('node:fs');
+      const { join } = await import('node:path');
+      const { homedir } = await import('node:os');
+      const adcPath = join(homedir(), '.config', 'gcloud', 'application_default_credentials.json');
+      const adc = JSON.parse(readFileSync(adcPath, 'utf-8'));
+      if (adc.refresh_token && adc.client_id && adc.refresh_token !== this.config.credentials.refresh_token) {
+        // ADC has a newer refresh token — use it
+        this.config.credentials.refresh_token = adc.refresh_token;
+        if (adc.client_id) this.config.credentials.client_id = adc.client_id;
+        if (adc.client_secret) this.config.credentials.client_secret = adc.client_secret;
+        logger.info({ id: this.id }, 'Gemini refresh token updated from Google ADC');
+      }
+    } catch { /* No ADC file */ }
+
+    // Strategy 2: OAuth refresh_token flow
     const refreshToken = this.config.credentials.refresh_token;
     const clientId = this.config.credentials.client_id;
     const clientSecret = this.config.credentials.client_secret;
