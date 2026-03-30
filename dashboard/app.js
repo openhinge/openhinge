@@ -2153,20 +2153,34 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
 
   async function createOpenClawKeyForm() {
     closeModal();
-    await loadSoulsList();
+    await Promise.all([loadSoulsList(), loadProvidersList()]);
 
-    // Get available models from providers
+    const modelLists = {
+      claude: ['claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001'],
+      openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4.1', 'gpt-4.1-mini', 'gpt-5.4-mini', 'gpt-5.4', 'gpt-5.3-codex', 'gpt-5.2', 'gpt-5.1', 'gpt-5'],
+      gemini: ['gemini-2.5-pro', 'gemini-2.5-flash'],
+      ollama: [],
+    };
+
+    // Build model options grouped by provider
     const models = [];
     for (const p of _providers) {
-      if (p.is_enabled) {
-        const cfg = typeof p.config === 'string' ? JSON.parse(p.config || '{}') : (p.config || {});
-        const model = cfg.default_model || p.type;
-        models.push({ id: model, name: `${p.name} — ${model}` });
+      if (!p.is_enabled) continue;
+      const cfg = typeof p.config === 'string' ? JSON.parse(p.config || '{}') : (p.config || {});
+      const known = modelLists[p.type] || [];
+      const defaultModel = cfg.default_model || '';
+      // Add all known models for this provider
+      for (const m of known) {
+        models.push({ id: m, name: `${p.name} — ${m}`, isDefault: m === defaultModel });
+      }
+      // Add custom default if not in list
+      if (defaultModel && !known.includes(defaultModel)) {
+        models.push({ id: defaultModel, name: `${p.name} — ${defaultModel}`, isDefault: true });
       }
     }
 
     const modelOpts = models.map(m =>
-      `<option value="${h(m.id)}">${h(m.name)}</option>`
+      `<option value="${h(m.id)}"${m.isDefault ? ' selected' : ''}>${h(m.name)}</option>`
     ).join('');
 
     openModal('Create OpenClaw Key', `
