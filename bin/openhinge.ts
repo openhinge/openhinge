@@ -446,15 +446,14 @@ program.command('status')
     closeDatabase();
   });
 
-// Update command — pull latest, install deps, rebuild, migrate
+// Update command — self-contained, never relies on stale compiled logic
 program.command('update')
   .description('Update OpenHinge to the latest version')
   .action(async () => {
-    const { execSync } = await import('node:child_process');
+    const { execSync, spawn: nodeSpawn } = await import('node:child_process');
     const { resolve } = await import('node:path');
     const { readFileSync } = await import('node:fs');
 
-    // import.meta.dirname = dist/bin/ in compiled, bin/ in dev — find project root via package.json
     let root = resolve(import.meta.dirname, '..');
     const { existsSync } = await import('node:fs');
     if (!existsSync(resolve(root, 'package.json'))) root = resolve(root, '..');
@@ -463,53 +462,9 @@ program.command('update')
     console.log('Checking for updates...');
 
     try {
+      // Always pull + rebuild — simple, reliable, no stale binary issues
       execSync('git fetch origin', { cwd: root, stdio: 'pipe' });
-      const behind = execSync('git rev-list HEAD..origin/main --count', { cwd: root, encoding: 'utf-8' }).trim();
-
-      if (behind === '0') {
-        // Check if dist/ is stale (source files newer than dist)
-        const { statSync } = await import('node:fs');
-        let needsRebuild = false;
-        try {
-          const distTime = statSync(resolve(root, 'dist/src/index.js')).mtimeMs;
-          const srcTime = statSync(resolve(root, 'src/index.ts')).mtimeMs;
-          const dashTime = statSync(resolve(root, 'dashboard/app.js')).mtimeMs;
-          needsRebuild = srcTime > distTime || dashTime > distTime;
-        } catch { needsRebuild = true; }
-
-        if (!needsRebuild) {
-          console.log('Already up to date.');
-          return;
-        }
-        console.log('Source files changed. Rebuilding...');
-        execSync('npm run build', { cwd: root, stdio: 'inherit' });
-        console.log('Rebuild complete.');
-
-        // Auto-restart if running
-        try {
-          const pids = execSync('lsof -ti:3700', { encoding: 'utf-8' }).trim();
-          if (pids) {
-            console.log('Restarting server...');
-            for (const pid of pids.split('\n')) {
-              try { process.kill(parseInt(pid)); } catch {}
-            }
-            await new Promise(r => setTimeout(r, 1000));
-            const { spawn } = await import('node:child_process');
-            const server = spawn('node', [resolve(root, 'dist/src/index.js')], {
-              cwd: root, detached: true, stdio: 'ignore',
-            });
-            server.unref();
-            console.log('Server restarted.');
-          }
-        } catch {}
-        return;
-      }
-
-      console.log(`${behind} new commit(s) available. Updating...`);
-
-      // Reset generated files that differ across npm versions
-      execSync('git checkout -- package-lock.json', { cwd: root, stdio: 'pipe' }).toString();
-
+      execSync('git checkout -- package-lock.json', { cwd: root, stdio: 'pipe' });
       execSync('git pull --ff-only origin main', { cwd: root, stdio: 'inherit' });
 
       console.log('Installing dependencies...');
@@ -518,14 +473,23 @@ program.command('update')
       console.log('Building...');
       execSync('npm run build', { cwd: root, stdio: 'inherit' });
 
-      // Auto-migrate in case schema changed
+      // Run migrations
       const config = loadConfig();
       initDatabase(config.db.path);
       closeDatabase();
       console.log('Migrations applied.');
 
       const newPkg = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf-8'));
-      console.log(`\nUpdated: ${currentPkg.version} → ${newPkg.version}`);
+      if (newPkg.version !== currentPkg.version) {
+        console.log(`\nUpdated: ${currentPkg.version} → ${newPkg.version}`);
+      } else {
+        console.log('Rebuilt successfully.');
+      }
+
+      // Re-link globally in case bin changed
+      try { execSync('npm link --silent', { cwd: root, stdio: 'pipe' }); } catch {
+        try { execSync('sudo npm link --silent', { cwd: root, stdio: 'pipe' }); } catch {}
+      }
 
       // Auto-restart server if running
       try {
@@ -533,20 +497,16 @@ program.command('update')
         if (pids) {
           console.log('Restarting server...');
           for (const pid of pids.split('\n')) {
-            try { process.kill(parseInt(pid)); } catch { /* already dead */ }
+            try { process.kill(parseInt(pid)); } catch {}
           }
-          // Wait for port to free
           await new Promise(r => setTimeout(r, 1000));
-          const { spawn } = await import('node:child_process');
-          const server = spawn('node', [resolve(root, 'dist/src/index.js')], {
-            cwd: root,
-            detached: true,
-            stdio: 'ignore',
+          const server = nodeSpawn('node', [resolve(root, 'dist/src/index.js')], {
+            cwd: root, detached: true, stdio: 'ignore',
           });
           server.unref();
           console.log('Server restarted.');
         }
-      } catch { /* server wasn't running, nothing to restart */ }
+      } catch {}
 
       console.log('Update complete.');
     } catch (err: any) {
