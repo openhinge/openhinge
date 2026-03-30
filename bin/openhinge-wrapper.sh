@@ -2,8 +2,15 @@
 # Wrapper for openhinge CLI — catches crashes and provides self-healing update
 set -e
 
-# Find install root
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# Find install root (resolve symlinks)
+SOURCE="$0"
+while [ -L "$SOURCE" ]; do
+  DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  # If relative symlink, resolve relative to symlink's directory
+  [[ "$SOURCE" != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+SCRIPT_DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
 ROOT="$SCRIPT_DIR"
 # Walk up to find package.json (handles both bin/ and dist/bin/)
 for i in 1 2 3; do
@@ -44,7 +51,7 @@ if [ ! -f "$ENTRY" ]; then
   cd "$ROOT" && npm run build 2>&1 | tail -1
 fi
 
-node "$ENTRY" "$@" 2>/dev/null
+node "$ENTRY" "$@"
 EXIT_CODE=$?
 
 if [ $EXIT_CODE -ne 0 ]; then
