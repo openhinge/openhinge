@@ -2078,6 +2078,8 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
   }
 
   async function createApiKeyForm(format = 'openai') {
+    try {
+    closeModal();
     await Promise.all([loadSoulsList(), loadProvidersList()]);
 
     const formatLabels = { openai: 'OpenAI Compatible', anthropic: 'Anthropic Compatible' };
@@ -2146,9 +2148,11 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
     // Hide soul list initially since "All" is checked
     const soulList = document.getElementById('key-soul-list');
     if (soulList) soulList.style.display = 'none';
+    } catch (err) { console.error('createApiKeyForm error:', err); toast('Error: ' + err.message, 'error'); }
   }
 
   async function createOpenClawKeyForm() {
+    closeModal();
     await loadSoulsList();
 
     // Get available models from providers
