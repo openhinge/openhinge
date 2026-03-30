@@ -1,10 +1,18 @@
+import { readFileSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { loadConfig } from './config/index.js';
 import { createServer } from './server.js';
 import { closeDatabase } from './db/index.js';
 import { logger } from './utils/logger.js';
 
+// Set version from package.json once at startup
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const pkg = JSON.parse(readFileSync(resolve(__dirname, '../../package.json'), 'utf-8'));
+process.env.OPENHINGE_VERSION = pkg.version;
+
 async function main() {
-  logger.info('Starting OpenHinge AI Gateway...');
+  logger.info({ version: pkg.version }, 'Starting OpenHinge AI Gateway...');
 
   const config = loadConfig();
   const server = await createServer(config);

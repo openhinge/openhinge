@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+import { readFileSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Command } from 'commander';
 import { loadConfig } from '../src/config/index.js';
 import { initDatabase, getDb, closeDatabase } from '../src/db/index.js';
@@ -8,12 +11,15 @@ import { generateId } from '../src/utils/crypto.js';
 import * as souls from '../src/souls/repository.js';
 import * as keys from '../src/keys/repository.js';
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const pkg = JSON.parse(readFileSync(resolve(__dirname, '../package.json'), 'utf-8'));
+
 const program = new Command();
 
 program
   .name('openhinge')
   .description('OpenHinge AI Gateway CLI')
-  .version('0.1.4');
+  .version(pkg.version);
 
 // Start command — start the gateway server (background by default)
 program.command('start')
