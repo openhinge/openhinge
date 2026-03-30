@@ -13,7 +13,7 @@ const program = new Command();
 program
   .name('openhinge')
   .description('OpenHinge AI Gateway CLI')
-  .version('0.1.0');
+  .version('0.1.1');
 
 // Start command — start the gateway server
 program.command('start')
