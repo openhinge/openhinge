@@ -42,6 +42,8 @@ function decryptCredentials(encrypted: string, key: string): Record<string, stri
   }
 }
 
+let _refreshInterval: ReturnType<typeof setInterval> | null = null;
+
 export function loadProviders(encryptionKey: string): void {
   setEncryptionKey(encryptionKey);
   const db = getDb();
@@ -56,6 +58,29 @@ export function loadProviders(encryptionKey: string): void {
       logger.error({ id: row.id, err: err.message }, 'Failed to load provider');
     }
   }
+
+  // Start background token refresh — every 30 min, refresh any expiring tokens
+  if (_refreshInterval) clearInterval(_refreshInterval);
+  _refreshInterval = setInterval(async () => {
+    for (const [id, provider] of providers) {
+      try {
+        const creds = (provider as any).config?.credentials;
+        if (!creds?.expires_at) continue;
+        const expiresMs = Number(creds.expires_at);
+        const bufferMs = 10 * 60 * 1000; // refresh if expiring within 10 min
+        if (Date.now() + bufferMs >= expiresMs) {
+          logger.info({ id, type: (provider as any).type }, 'Background token refresh');
+          const refreshed = await provider.refreshToken();
+          if (refreshed) {
+            // Update health status back to healthy
+            db.prepare("UPDATE providers SET health_status = 'healthy' WHERE id = ?").run(id);
+          }
+        }
+      } catch (err: any) {
+        logger.error({ id, err: err.message }, 'Background refresh failed');
+      }
+    }
+  }, 30 * 60 * 1000); // every 30 min
 }
 
 export function getProvider(id: string): BaseProvider | undefined {
@@ -104,19 +129,16 @@ export async function chatWithFallback(
     const provider = providers.get(id);
     if (!provider) continue;
 
-    // Skip providers marked as down
-    const health = getProviderHealth(id);
-    if (health === 'down') {
-      logger.warn({ provider: id }, 'Skipping down provider');
-      attempts.push({ provider_id: id, provider_name: provider.name, error: 'Provider is down', latency_ms: 0 });
-      continue;
-    }
-
     const timeout = getProviderTimeout(id);
     const start = Date.now();
 
     try {
       const response = await withTimeout(provider.chat(params), timeout, id);
+      // If it was marked down but just succeeded, update health
+      const health = getProviderHealth(id);
+      if (health === 'down') {
+        getDb().prepare("UPDATE providers SET health_status = 'healthy' WHERE id = ?").run(id);
+      }
       response.fallback_attempts = attempts.length > 0 ? attempts : undefined;
       return { provider, response };
     } catch (err: any) {
@@ -139,14 +161,6 @@ export async function* streamWithFallback(
   for (const id of providerIds) {
     const provider = providers.get(id);
     if (!provider) continue;
-
-    // Skip providers marked as down
-    const health = getProviderHealth(id);
-    if (health === 'down') {
-      logger.warn({ provider: id }, 'Skipping down provider');
-      attempts.push({ provider_id: id, provider_name: provider.name, error: 'Provider is down', latency_ms: 0 });
-      continue;
-    }
 
     const start = Date.now();
 
