@@ -7,9 +7,14 @@ export async function keyAdminRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post<{ Body: any }>('/admin/keys', async (request, reply) => {
-    const key = keys.createKey(request.body as any);
-    // Return the raw key only on creation — store it now, it won't be shown again
-    reply.code(201).send({ data: key });
+    try {
+      const key = keys.createKey(request.body as any);
+      // Return the raw key only on creation — store it now, it won't be shown again
+      reply.code(201).send({ data: key });
+    } catch (err: any) {
+      request.log.error({ err: err.message, body: request.body }, 'Key creation failed');
+      reply.code(500).send({ error: { code: 'KEY_CREATE_ERROR', message: err.message } });
+    }
   });
 
   app.delete<{ Params: { id: string } }>('/admin/keys/:id', async (request) => {

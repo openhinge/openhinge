@@ -2254,12 +2254,14 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
       const allSouls = document.getElementById('key-all-souls')?.checked ?? true;
       const soulIds = allSouls ? [] : Array.from(document.querySelectorAll('.soul-checkbox:checked')).map(cb => cb.value);
 
-      const res = await api('/admin/keys', { method: 'POST', body: {
+      const payload = {
         name,
         api_format: format,
-        soul_ids: soulIds.length > 0 ? soulIds : undefined,
         rate_limit_rpm: rpm,
-      }});
+      };
+      if (soulIds.length > 0) payload.soul_ids = soulIds;
+      console.log('saveKey payload:', JSON.stringify(payload));
+      const res = await api('/admin/keys', { method: 'POST', body: payload });
       console.log('saveKey response:', JSON.stringify(res));
       const data = res?.data;
 
