@@ -1,0 +1,19 @@
+[13:47:11.140] [32mINFO[39m (3815): [36mStarting OpenHinge AI Gateway...[39m
+    [35mversion[39m: "0.1.5"
+[13:47:11.147] [32mINFO[39m (3815): [36mDatabase initialized[39m
+    [35mpath[39m: "./data/openhinge.db"
+[13:47:11.171] [32mINFO[39m (3815): [36mProvider loaded[39m
+    [35mid[39m: "d34ac0a056ff098c"
+    [35mtype[39m: "claude"
+[13:47:11.193] [32mINFO[39m (3815): [36mProvider loaded[39m
+    [35mid[39m: "0bb9a412f739566b"
+    [35mtype[39m: "gemini"
+[13:47:11.216] [32mINFO[39m (3815): [36mProvider loaded[39m
+    [35mid[39m: "f82560494a10bf43"
+    [35mtype[39m: "openai"
+[13:47:11.239] [32mINFO[39m (3815): [36mProvider loaded[39m
+    [35mid[39m: "2b73f6a54ed218a2"
+    [35mtype[39m: "ollama"
+[13:47:11.286] [32mINFO[39m (3815): [36mOpenHinge running at http://127.0.0.1:3700[39m
+[13:47:11.286] [32mINFO[39m (3815): [36mDashboard: http://127.0.0.1:3700/dashboard/[39m
+[13:47:11.286] [32mINFO[39m (3815): [36mHealth: http://127.0.0.1:3700/health[39m

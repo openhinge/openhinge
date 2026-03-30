@@ -39,7 +39,7 @@ program.command('start')
     const { resolve } = await import('node:path');
     const { existsSync, openSync, mkdirSync, writeFileSync } = await import('node:fs');
 
-    let root = resolve(import.meta.dirname, '..');
+    let root = resolve(__dirname, '..');
     if (!existsSync(resolve(root, 'package.json'))) root = resolve(root, '..');
     const entry = resolve(root, 'dist/src/index.js');
 
@@ -96,7 +96,7 @@ program.command('stop')
     const { resolve } = await import('node:path');
     const { readFileSync, unlinkSync, existsSync } = await import('node:fs');
 
-    let root = resolve(import.meta.dirname, '..');
+    let root = resolve(__dirname, '..');
     if (!existsSync(resolve(root, 'package.json'))) root = resolve(root, '..');
     const pidFile = resolve(root, 'data/openhinge.pid');
 
@@ -137,7 +137,7 @@ program.command('restart')
     const { existsSync, openSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } = await import('node:fs');
     const { spawn } = await import('node:child_process');
 
-    let root = resolve(import.meta.dirname, '..');
+    let root = resolve(__dirname, '..');
     if (!existsSync(resolve(root, 'package.json'))) root = resolve(root, '..');
     const entry = resolve(root, 'dist/src/index.js');
     const dataDir = resolve(root, 'data');
@@ -186,7 +186,7 @@ program.command('startup')
     const { execSync } = await import('node:child_process');
     const { platform, homedir } = await import('node:os');
 
-    let root = resolve(import.meta.dirname, '..');
+    let root = resolve(__dirname, '..');
     if (!existsSync(resolve(root, 'package.json'))) root = resolve(root, '..');
     const entry = resolve(root, 'dist/src/index.js');
     const nodePath = execSync('which node', { encoding: 'utf-8' }).trim();
@@ -286,7 +286,7 @@ program.command('logs')
     const { existsSync } = await import('node:fs');
     const { execSync, spawn: nodeSpawn } = await import('node:child_process');
 
-    let root = resolve(import.meta.dirname, '..');
+    let root = resolve(__dirname, '..');
     if (!existsSync(resolve(root, 'package.json'))) root = resolve(root, '..');
     const logFile = resolve(root, 'data/openhinge.log');
 
@@ -745,74 +745,8 @@ program.command('status')
     closeDatabase();
   });
 
-// Update command — self-contained, never relies on stale compiled logic
-program.command('update')
-  .description('Update OpenHinge to the latest version')
-  .action(async () => {
-    const { execSync, spawn: nodeSpawn } = await import('node:child_process');
-    const { resolve } = await import('node:path');
-    const { readFileSync } = await import('node:fs');
-
-    let root = resolve(import.meta.dirname, '..');
-    const { existsSync } = await import('node:fs');
-    if (!existsSync(resolve(root, 'package.json'))) root = resolve(root, '..');
-    const currentPkg = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf-8'));
-    console.log(`Current version: ${currentPkg.version}`);
-    console.log('Checking for updates...');
-
-    try {
-      // Always pull + rebuild — simple, reliable, no stale binary issues
-      execSync('git fetch origin', { cwd: root, stdio: 'pipe' });
-      execSync('git checkout -- package-lock.json', { cwd: root, stdio: 'pipe' });
-      execSync('git pull --ff-only origin main', { cwd: root, stdio: 'inherit' });
-
-      console.log('Installing dependencies...');
-      execSync('npm install --production=false', { cwd: root, stdio: 'inherit' });
-
-      console.log('Building...');
-      execSync('npm run build', { cwd: root, stdio: 'inherit' });
-
-      // Run migrations
-      const config = loadConfig();
-      initDatabase(config.db.path);
-      closeDatabase();
-      console.log('Migrations applied.');
-
-      const newPkg = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf-8'));
-      if (newPkg.version !== currentPkg.version) {
-        console.log(`\nUpdated: ${currentPkg.version} → ${newPkg.version}`);
-      } else {
-        console.log('Rebuilt successfully.');
-      }
-
-      // Re-link globally in case bin changed
-      try { execSync('npm link --silent', { cwd: root, stdio: 'pipe' }); } catch {
-        try { execSync('sudo npm link --silent', { cwd: root, stdio: 'pipe' }); } catch {}
-      }
-
-      // Auto-restart server if running
-      try {
-        const pids = execSync('lsof -ti:3700', { encoding: 'utf-8' }).trim();
-        if (pids) {
-          console.log('Restarting server...');
-          for (const pid of pids.split('\n')) {
-            try { process.kill(parseInt(pid)); } catch {}
-          }
-          await new Promise(r => setTimeout(r, 1000));
-          const server = nodeSpawn('node', [resolve(root, 'dist/src/index.js')], {
-            cwd: root, detached: true, stdio: 'ignore',
-          });
-          server.unref();
-          console.log('Server restarted.');
-        }
-      } catch {}
-
-      console.log('Update complete.');
-    } catch (err: any) {
-      console.error(`Update failed: ${err.message}`);
-      process.exit(1);
-    }
-  });
+// Update command is handled by the shell wrapper (bin/openhinge-wrapper.sh)
+// This ensures update works even when the Node binary is broken.
 
 // Uninstall command — remove global link, data, and install dir
 program.command('uninstall')
@@ -823,7 +757,7 @@ program.command('uninstall')
     const { existsSync } = await import('node:fs');
     const readline = await import('node:readline');
 
-    let root = resolve(import.meta.dirname, '..');
+    let root = resolve(__dirname, '..');
     if (!existsSync(resolve(root, 'package.json'))) root = resolve(root, '..');
 
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });

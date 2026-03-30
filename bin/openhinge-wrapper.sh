@@ -38,7 +38,9 @@ if [ "$1" = "update" ]; then
     echo "Restarting server..."
     kill $PID 2>/dev/null || true
     sleep 1
+    mkdir -p "$ROOT/data"
     nohup node "$ROOT/dist/src/index.js" > "$ROOT/data/openhinge.log" 2>&1 &
+    echo "$!" > "$ROOT/data/openhinge.pid"
     echo "Server restarted (PID $!)"
   fi
   exit 0
@@ -51,8 +53,10 @@ if [ ! -f "$ENTRY" ]; then
   cd "$ROOT" && npm run build 2>&1 | tail -1
 fi
 
+set +e
 node "$ENTRY" "$@"
 EXIT_CODE=$?
+set -e
 
 if [ $EXIT_CODE -ne 0 ]; then
   # Node binary crashed — try rebuilding
