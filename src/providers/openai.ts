@@ -1,5 +1,5 @@
 import { BaseProvider } from './base.js';
-import type { ChatRequest, ChatResponse, ChatChunk, HealthStatus } from './types.js';
+import type { ChatRequest, ChatResponse, ChatChunk, HealthStatus, ToolCall } from './types.js';
 import { ProviderError } from '../utils/errors.js';
 import { generateId } from '../utils/crypto.js';
 import { logger } from '../utils/logger.js';
@@ -241,7 +241,15 @@ export class OpenAIProvider extends BaseProvider {
     };
     if (params.temperature !== undefined) body.temperature = params.temperature;
     if (params.stop) body.stop = params.stop;
-    if (params.response_schema) {
+    if (params.tools && params.tools.length > 0) {
+      // Normalize to OpenAI format
+      body.tools = params.tools.map(t => {
+        if (t.function) return { type: 'function', function: t.function };
+        // Convert from Anthropic format
+        return { type: 'function', function: { name: t.name!, description: t.description || '', parameters: t.input_schema || { type: 'object' } } };
+      });
+      if (params.tool_choice) body.tool_choice = params.tool_choice;
+    } else if (params.response_schema) {
       body.response_format = {
         type: 'json_schema',
         json_schema: { name: 'response', strict: true, schema: params.response_schema },
@@ -262,6 +270,16 @@ export class OpenAIProvider extends BaseProvider {
     const data = await res.json() as any;
     const choice = data.choices?.[0];
 
+    // Extract tool_calls if present
+    let toolCalls: ToolCall[] | undefined;
+    if (choice?.message?.tool_calls?.length) {
+      toolCalls = choice.message.tool_calls.map((tc: any) => ({
+        id: tc.id,
+        type: 'function' as const,
+        function: { name: tc.function.name, arguments: tc.function.arguments },
+      }));
+    }
+
     return {
       id: data.id || generateId(),
       model: data.model || model,
@@ -269,6 +287,7 @@ export class OpenAIProvider extends BaseProvider {
       input_tokens: data.usage?.prompt_tokens || 0,
       output_tokens: data.usage?.completion_tokens || 0,
       finish_reason: choice?.finish_reason || 'stop',
+      tool_calls: toolCalls,
     };
   }
 
@@ -287,6 +306,13 @@ export class OpenAIProvider extends BaseProvider {
       stream_options: { include_usage: true },
     };
     if (params.temperature !== undefined) body.temperature = params.temperature;
+    if (params.tools && params.tools.length > 0) {
+      body.tools = params.tools.map(t => {
+        if (t.function) return { type: 'function', function: t.function };
+        return { type: 'function', function: { name: t.name!, description: t.description || '', parameters: t.input_schema || { type: 'object' } } };
+      });
+      if (params.tool_choice) body.tool_choice = params.tool_choice;
+    }
 
     const res = await this.fetchWithRefresh(`${this.baseUrl}/v1/chat/completions`, {
       method: 'POST',
@@ -302,6 +328,9 @@ export class OpenAIProvider extends BaseProvider {
     const reader = res.body!.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
+
+    // Track streaming tool calls
+    const pendingToolCalls: Map<number, { id: string; name: string; args: string }> = new Map();
 
     try {
       while (true) {
@@ -328,7 +357,25 @@ export class OpenAIProvider extends BaseProvider {
                 finish_reason: null,
               };
             }
+            // Accumulate tool call deltas
+            if (choice?.delta?.tool_calls) {
+              for (const tc of choice.delta.tool_calls) {
+                const idx = tc.index ?? 0;
+                if (!pendingToolCalls.has(idx)) {
+                  pendingToolCalls.set(idx, { id: tc.id || '', name: '', args: '' });
+                }
+                const pending = pendingToolCalls.get(idx)!;
+                if (tc.id) pending.id = tc.id;
+                if (tc.function?.name) pending.name += tc.function.name;
+                if (tc.function?.arguments) pending.args += tc.function.arguments;
+              }
+            }
             if (choice?.finish_reason) {
+              // Emit accumulated tool calls
+              const toolCalls: ToolCall[] = [];
+              for (const tc of pendingToolCalls.values()) {
+                toolCalls.push({ id: tc.id, type: 'function', function: { name: tc.name, arguments: tc.args || '{}' } });
+              }
               yield {
                 id: event.id || generateId(),
                 model: event.model || model,
@@ -336,6 +383,7 @@ export class OpenAIProvider extends BaseProvider {
                 finish_reason: choice.finish_reason,
                 input_tokens: event.usage?.prompt_tokens,
                 output_tokens: event.usage?.completion_tokens,
+                tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
               };
             }
           } catch { /* skip */ }

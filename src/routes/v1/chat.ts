@@ -8,7 +8,7 @@ import { logUsage } from '../../cost/index.js';
 import { calculateCostCents } from '../../utils/tokens.js';
 import { generateId } from '../../utils/crypto.js';
 import { NotFoundError, OpenHingeError } from '../../utils/errors.js';
-import type { ChatMessage, JsonSchema } from '../../providers/types.js';
+import type { ChatMessage, JsonSchema, ToolDefinition, ToolCall } from '../../providers/types.js';
 
 /** Lightweight JSON Schema validator — checks type, required fields, and property types */
 function validateBasicSchema(data: unknown, schema: JsonSchema): boolean {
@@ -45,9 +45,11 @@ function validateBasicSchema(data: unknown, schema: JsonSchema): boolean {
 }
 
 /** Normalize provider-specific finish reasons to OpenAI format */
-function toOpenAIFinishReason(reason: string | null): string | null {
+function toOpenAIFinishReason(reason: string | null, hasToolCalls?: boolean): string | null {
   if (!reason) return null;
   const r = reason.toLowerCase();
+  if (r === 'tool_use' || r === 'tool_calls') return 'tool_calls';
+  if (hasToolCalls) return 'tool_calls';
   if (r === 'stop' || r === 'end_turn' || r === 'end') return 'stop';
   if (r === 'length' || r === 'max_tokens') return 'length';
   if (r.includes('stop')) return 'stop';
@@ -63,6 +65,8 @@ interface ChatBody {
   stream?: boolean;
   stop?: string[];
   response_schema?: JsonSchema;
+  tools?: ToolDefinition[];
+  tool_choice?: unknown;
 }
 
 export async function chatRoutes(app: FastifyInstance): Promise<void> {
@@ -142,6 +146,8 @@ async function handleChat(request: FastifyRequest<{ Params?: { slug?: string }; 
     stream: body.stream,
     stop: body.stop,
     response_schema: responseSchema,
+    tools: body.tools,
+    tool_choice: body.tool_choice,
   };
 
   if (body.stream) {
@@ -163,6 +169,10 @@ async function handleChat(request: FastifyRequest<{ Params?: { slug?: string }; 
         usedModel = chunk.model;
 
         // OpenAI-compatible SSE format
+        const delta: Record<string, unknown> = {};
+        if (chunk.delta) delta.content = chunk.delta;
+        if (chunk.tool_calls?.length) delta.tool_calls = chunk.tool_calls;
+
         const sseData = {
           id: `chatcmpl-${chunk.id}`,
           object: 'chat.completion.chunk',
@@ -170,8 +180,8 @@ async function handleChat(request: FastifyRequest<{ Params?: { slug?: string }; 
           model: chunk.model,
           choices: [{
             index: 0,
-            delta: chunk.delta ? { content: chunk.delta } : {},
-            finish_reason: toOpenAIFinishReason(chunk.finish_reason),
+            delta,
+            finish_reason: toOpenAIFinishReason(chunk.finish_reason, !!chunk.tool_calls?.length),
           }],
         };
 
@@ -235,6 +245,9 @@ async function handleChat(request: FastifyRequest<{ Params?: { slug?: string }; 
     });
 
     // OpenAI-compatible response format
+    const message: Record<string, unknown> = { role: 'assistant', content: response.content };
+    if (response.tool_calls?.length) message.tool_calls = response.tool_calls;
+
     reply.send({
       id: `chatcmpl-${response.id}`,
       object: 'chat.completion',
@@ -242,8 +255,8 @@ async function handleChat(request: FastifyRequest<{ Params?: { slug?: string }; 
       model: response.model,
       choices: [{
         index: 0,
-        message: { role: 'assistant', content: response.content },
-        finish_reason: toOpenAIFinishReason(response.finish_reason),
+        message,
+        finish_reason: toOpenAIFinishReason(response.finish_reason, !!response.tool_calls?.length),
       }],
       usage: {
         prompt_tokens: response.input_tokens,

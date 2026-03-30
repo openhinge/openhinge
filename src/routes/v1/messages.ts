@@ -8,16 +8,18 @@ import { logUsage } from '../../cost/index.js';
 import { calculateCostCents } from '../../utils/tokens.js';
 import { generateId } from '../../utils/crypto.js';
 import { NotFoundError, OpenHingeError } from '../../utils/errors.js';
-import type { ChatMessage } from '../../providers/types.js';
+import type { ChatMessage, ToolDefinition } from '../../providers/types.js';
 
 interface AnthropicBody {
   model?: string;
-  messages: Array<{ role: string; content: string | Array<{ type: string; text?: string }> }>;
+  messages: Array<{ role: string; content: string | Array<{ type: string; text?: string; id?: string; name?: string; input?: unknown; tool_use_id?: string }> }>;
   system?: string | Array<{ type: string; text: string }>;
   max_tokens: number;
   temperature?: number;
   stream?: boolean;
   stop_sequences?: string[];
+  tools?: Array<{ name: string; description?: string; input_schema?: unknown }>;
+  tool_choice?: unknown;
 }
 
 export async function messagesRoutes(app: FastifyInstance): Promise<void> {
@@ -35,6 +37,45 @@ export async function messagesRoutes(app: FastifyInstance): Promise<void> {
 function extractTextContent(content: string | Array<{ type: string; text?: string }>): string {
   if (typeof content === 'string') return content;
   return content.filter(b => b.type === 'text').map(b => b.text || '').join('');
+}
+
+function convertAnthropicMessages(msgs: AnthropicBody['messages']): ChatMessage[] {
+  const out: ChatMessage[] = [];
+  for (const msg of msgs) {
+    if (typeof msg.content === 'string') {
+      out.push({ role: msg.role as 'user' | 'assistant', content: msg.content });
+      continue;
+    }
+    // Complex content blocks
+    const textParts = msg.content.filter(b => b.type === 'text').map(b => b.text || '').join('');
+    const toolUseParts = msg.content.filter(b => b.type === 'tool_use');
+    const toolResultParts = msg.content.filter(b => b.type === 'tool_result');
+
+    if (msg.role === 'assistant' && toolUseParts.length > 0) {
+      // Assistant with tool_use blocks
+      out.push({
+        role: 'assistant',
+        content: textParts,
+        tool_calls: toolUseParts.map(b => ({
+          id: b.id || `call_${Date.now()}`,
+          type: 'function' as const,
+          function: { name: b.name || '', arguments: JSON.stringify(b.input || {}) },
+        })),
+      });
+    } else if (toolResultParts.length > 0) {
+      // Tool results
+      for (const tr of toolResultParts) {
+        out.push({
+          role: 'tool',
+          content: typeof tr.text === 'string' ? tr.text : JSON.stringify(tr.text || ''),
+          tool_call_id: tr.tool_use_id,
+        });
+      }
+    } else {
+      out.push({ role: msg.role as 'user' | 'assistant', content: textParts });
+    }
+  }
+  return out;
 }
 
 function extractSystemText(system: AnthropicBody['system']): string {
@@ -80,12 +121,7 @@ async function handleMessages(
     messages.push({ role: 'system', content: systemText });
   }
 
-  for (const msg of body.messages) {
-    messages.push({
-      role: msg.role as 'user' | 'assistant',
-      content: extractTextContent(msg.content),
-    });
-  }
+  messages.push(...convertAnthropicMessages(body.messages));
 
   // Build provider chain
   const providerIds: string[] = [];
@@ -100,12 +136,21 @@ async function handleMessages(
     throw new OpenHingeError('No providers configured', 503, 'NO_PROVIDERS');
   }
 
+  // Convert Anthropic tools format
+  const tools: ToolDefinition[] | undefined = body.tools?.map(t => ({
+    name: t.name,
+    description: t.description,
+    input_schema: t.input_schema as any,
+  }));
+
   const chatParams = {
     messages,
     model: body.model || soul?.model || undefined,
     temperature: body.temperature ?? soul?.temperature,
     max_tokens: body.max_tokens || soul?.max_tokens || 4096,
     stop: body.stop_sequences,
+    tools,
+    tool_choice: body.tool_choice,
   };
 
   if (body.stream) {
@@ -137,6 +182,8 @@ async function handleMessages(
       },
     })}\n\n`);
 
+    let blockIndex = 0;
+
     try {
       for await (const { provider, chunk } of streamWithFallback(providerIds, chatParams)) {
         usedProvider = provider.id;
@@ -146,7 +193,7 @@ async function handleMessages(
           // content_block_start
           reply.raw.write(`event: content_block_start\ndata: ${JSON.stringify({
             type: 'content_block_start',
-            index: 0,
+            index: blockIndex,
             content_block: { type: 'text', text: '' },
           })}\n\n`);
           contentBlockStarted = true;
@@ -155,7 +202,7 @@ async function handleMessages(
         if (chunk.delta) {
           reply.raw.write(`event: content_block_delta\ndata: ${JSON.stringify({
             type: 'content_block_delta',
-            index: 0,
+            index: blockIndex,
             delta: { type: 'text_delta', text: chunk.delta },
           })}\n\n`);
         }
@@ -164,16 +211,36 @@ async function handleMessages(
         if (chunk.output_tokens) totalOutput = chunk.output_tokens;
 
         if (chunk.finish_reason) {
-          // content_block_stop
+          // Close text content block
           reply.raw.write(`event: content_block_stop\ndata: ${JSON.stringify({
             type: 'content_block_stop',
-            index: 0,
+            index: blockIndex,
           })}\n\n`);
+          blockIndex++;
+
+          // Emit tool_use blocks if present
+          if (chunk.tool_calls?.length) {
+            for (const tc of chunk.tool_calls) {
+              let input: unknown = {};
+              try { input = JSON.parse(tc.function.arguments); } catch {}
+
+              reply.raw.write(`event: content_block_start\ndata: ${JSON.stringify({
+                type: 'content_block_start',
+                index: blockIndex,
+                content_block: { type: 'tool_use', id: tc.id, name: tc.function.name, input },
+              })}\n\n`);
+              reply.raw.write(`event: content_block_stop\ndata: ${JSON.stringify({
+                type: 'content_block_stop',
+                index: blockIndex,
+              })}\n\n`);
+              blockIndex++;
+            }
+          }
 
           // message_delta
           reply.raw.write(`event: message_delta\ndata: ${JSON.stringify({
             type: 'message_delta',
-            delta: { stop_reason: mapStopReason(chunk.finish_reason) },
+            delta: { stop_reason: mapStopReason(chunk.finish_reason, !!chunk.tool_calls?.length) },
             usage: { output_tokens: totalOutput },
           })}\n\n`);
         }
@@ -224,13 +291,27 @@ async function handleMessages(
       status: 'success',
     });
 
+    // Build content blocks
+    const contentBlocks: any[] = [];
+    if (response.content) {
+      contentBlocks.push({ type: 'text', text: response.content });
+    }
+    // Add tool_use blocks if present
+    if (response.tool_calls?.length) {
+      for (const tc of response.tool_calls) {
+        let input: unknown = {};
+        try { input = JSON.parse(tc.function.arguments); } catch {}
+        contentBlocks.push({ type: 'tool_use', id: tc.id, name: tc.function.name, input });
+      }
+    }
+
     reply.send({
       id: msgId,
       type: 'message',
       role: 'assistant',
-      content: [{ type: 'text', text: response.content }],
+      content: contentBlocks.length > 0 ? contentBlocks : [{ type: 'text', text: '' }],
       model: response.model,
-      stop_reason: mapStopReason(response.finish_reason),
+      stop_reason: mapStopReason(response.finish_reason, !!response.tool_calls?.length),
       stop_sequence: null,
       usage: {
         input_tokens: response.input_tokens,
@@ -255,10 +336,12 @@ async function handleMessages(
   }
 }
 
-function mapStopReason(reason: string): string {
+function mapStopReason(reason: string, hasToolCalls?: boolean): string {
   // Normalize various stop reasons to Anthropic format
   if (!reason) return 'end_turn';
   const r = reason.toLowerCase();
+  if (r === 'tool_use' || r === 'tool_calls') return 'tool_use';
+  if (hasToolCalls) return 'tool_use';
   if (r === 'stop' || r === 'end_turn' || r === 'end') return 'end_turn';
   if (r === 'length' || r === 'max_tokens') return 'max_tokens';
   if (r.includes('stop')) return 'stop_sequence';

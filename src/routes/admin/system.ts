@@ -27,7 +27,7 @@ export async function systemAdminRoutes(app: FastifyInstance, config: Config): P
 
     return {
       status: 'running',
-      version: '0.1.3',
+      version: '0.1.4',
       uptime: process.uptime(),
       providers: getAllProviders().length,
       souls: getAllSouls().length,

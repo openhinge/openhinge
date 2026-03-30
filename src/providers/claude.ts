@@ -1,5 +1,5 @@
 import { BaseProvider } from './base.js';
-import type { ChatRequest, ChatResponse, ChatChunk, HealthStatus } from './types.js';
+import type { ChatRequest, ChatResponse, ChatChunk, HealthStatus, ToolCall } from './types.js';
 import { ProviderError } from '../utils/errors.js';
 import { generateId } from '../utils/crypto.js';
 import { logger } from '../utils/logger.js';
@@ -117,13 +117,34 @@ export class ClaudeProvider extends BaseProvider {
     }
   }
 
+  private convertMessages(msgs: ChatRequest['messages']): any[] {
+    const out: any[] = [];
+    for (const m of msgs) {
+      if (m.role === 'system') continue;
+      if (m.role === 'assistant' && m.tool_calls?.length) {
+        // Assistant message with tool calls → Anthropic format
+        const content: any[] = [];
+        if (m.content) content.push({ type: 'text', text: m.content });
+        for (const tc of m.tool_calls) {
+          let input: unknown = {};
+          try { input = JSON.parse(tc.function.arguments); } catch {}
+          content.push({ type: 'tool_use', id: tc.id, name: tc.function.name, input });
+        }
+        out.push({ role: 'assistant', content });
+      } else if (m.role === 'tool' && m.tool_call_id) {
+        // Tool result → Anthropic tool_result format
+        out.push({ role: 'user', content: [{ type: 'tool_result', tool_use_id: m.tool_call_id, content: m.content }] });
+      } else {
+        out.push({ role: m.role, content: m.content });
+      }
+    }
+    return out;
+  }
+
   async chat(params: ChatRequest): Promise<ChatResponse> {
     const model = params.model || this.defaultModel();
     const systemMsg = params.messages.find(m => m.role === 'system');
-    const messages = params.messages.filter(m => m.role !== 'system').map(m => ({
-      role: m.role,
-      content: m.content,
-    }));
+    const messages = this.convertMessages(params.messages);
 
     const body: Record<string, unknown> = {
       model,
@@ -148,7 +169,29 @@ export class ClaudeProvider extends BaseProvider {
     }
     if (params.temperature !== undefined) body.temperature = params.temperature;
     if (params.stop) body.stop_sequences = params.stop;
-    if (params.response_schema) {
+
+    // Tools: client-provided tools take priority, then response_schema fallback
+    if (params.tools && params.tools.length > 0) {
+      body.tools = params.tools.map(t => {
+        // Convert OpenAI format to Anthropic format if needed
+        if (t.function) {
+          return { name: t.function.name, description: t.function.description || '', input_schema: t.function.parameters || { type: 'object' } };
+        }
+        // Already Anthropic format
+        return { name: t.name, description: t.description || '', input_schema: t.input_schema || { type: 'object' } };
+      });
+      if (params.tool_choice) {
+        // Convert OpenAI tool_choice to Anthropic format
+        if (params.tool_choice === 'auto') body.tool_choice = { type: 'auto' };
+        else if (params.tool_choice === 'none') body.tool_choice = { type: 'none' };
+        else if (params.tool_choice === 'required') body.tool_choice = { type: 'any' };
+        else if (typeof params.tool_choice === 'object' && (params.tool_choice as any).function?.name) {
+          body.tool_choice = { type: 'tool', name: (params.tool_choice as any).function.name };
+        } else {
+          body.tool_choice = params.tool_choice;
+        }
+      }
+    } else if (params.response_schema) {
       body.tools = [{
         name: 'structured_response',
         description: 'Return structured JSON matching the schema',
@@ -173,14 +216,25 @@ export class ClaudeProvider extends BaseProvider {
 
     const data = await res.json() as any;
 
-    // If structured output was requested, extract from tool_use block
-    let content: string;
-    if (params.response_schema) {
+    // Extract text content
+    const textBlocks = (data.content || []).filter((b: any) => b.type === 'text');
+    let content = textBlocks.map((b: any) => b.text).join('');
+
+    // If structured output was requested (not client tools), extract from tool_use block
+    if (params.response_schema && !params.tools?.length) {
       const toolBlock = data.content?.find((b: any) => b.type === 'tool_use');
-      content = toolBlock ? JSON.stringify(toolBlock.input) : '';
-    } else {
-      const textBlock = data.content?.find((b: any) => b.type === 'text');
-      content = textBlock?.text || '';
+      if (toolBlock) content = JSON.stringify(toolBlock.input);
+    }
+
+    // Extract tool_calls if the model wants to call tools
+    let toolCalls: ToolCall[] | undefined;
+    const toolUseBlocks = (data.content || []).filter((b: any) => b.type === 'tool_use');
+    if (toolUseBlocks.length > 0 && params.tools?.length) {
+      toolCalls = toolUseBlocks.map((b: any) => ({
+        id: b.id || `call_${generateId()}`,
+        type: 'function' as const,
+        function: { name: b.name, arguments: JSON.stringify(b.input) },
+      }));
     }
 
     return {
@@ -190,16 +244,14 @@ export class ClaudeProvider extends BaseProvider {
       input_tokens: data.usage?.input_tokens || 0,
       output_tokens: data.usage?.output_tokens || 0,
       finish_reason: data.stop_reason || 'end_turn',
+      tool_calls: toolCalls,
     };
   }
 
   async *chatStream(params: ChatRequest): AsyncGenerator<ChatChunk> {
     const model = params.model || this.defaultModel();
     const systemMsg = params.messages.find(m => m.role === 'system');
-    const messages = params.messages.filter(m => m.role !== 'system').map(m => ({
-      role: m.role,
-      content: m.content,
-    }));
+    const messages = this.convertMessages(params.messages);
 
     const body: Record<string, unknown> = {
       model,
@@ -221,6 +273,26 @@ export class ClaudeProvider extends BaseProvider {
     }
     if (params.temperature !== undefined) body.temperature = params.temperature;
 
+    // Pass tools through for streaming too
+    if (params.tools && params.tools.length > 0) {
+      body.tools = params.tools.map(t => {
+        if (t.function) {
+          return { name: t.function.name, description: t.function.description || '', input_schema: t.function.parameters || { type: 'object' } };
+        }
+        return { name: t.name, description: t.description || '', input_schema: t.input_schema || { type: 'object' } };
+      });
+      if (params.tool_choice) {
+        if (params.tool_choice === 'auto') body.tool_choice = { type: 'auto' };
+        else if (params.tool_choice === 'none') body.tool_choice = { type: 'none' };
+        else if (params.tool_choice === 'required') body.tool_choice = { type: 'any' };
+        else if (typeof params.tool_choice === 'object' && (params.tool_choice as any).function?.name) {
+          body.tool_choice = { type: 'tool', name: (params.tool_choice as any).function.name };
+        } else {
+          body.tool_choice = params.tool_choice;
+        }
+      }
+    }
+
     const res = await this.fetchWithRefresh(`${this.baseUrl}/v1/messages`, {
       method: 'POST',
       headers: this.headers(),
@@ -238,6 +310,9 @@ export class ClaudeProvider extends BaseProvider {
     const id = generateId();
     let inputTokens = 0;
     let outputTokens = 0;
+
+    // Track tool_use blocks being built during streaming
+    const pendingToolCalls: Map<number, { id: string; name: string; inputJson: string }> = new Map();
 
     try {
       while (true) {
@@ -258,11 +333,40 @@ export class ClaudeProvider extends BaseProvider {
 
             if (event.type === 'message_start') {
               inputTokens = event.message?.usage?.input_tokens || 0;
-            } else if (event.type === 'content_block_delta' && event.delta?.text) {
-              yield { id, model, delta: event.delta.text, finish_reason: null };
+            } else if (event.type === 'content_block_start') {
+              if (event.content_block?.type === 'tool_use') {
+                pendingToolCalls.set(event.index, {
+                  id: event.content_block.id || `call_${generateId()}`,
+                  name: event.content_block.name,
+                  inputJson: '',
+                });
+              }
+            } else if (event.type === 'content_block_delta') {
+              if (event.delta?.type === 'text_delta' && event.delta.text) {
+                yield { id, model, delta: event.delta.text, finish_reason: null };
+              } else if (event.delta?.type === 'input_json_delta' && event.delta.partial_json !== undefined) {
+                const tc = pendingToolCalls.get(event.index);
+                if (tc) tc.inputJson += event.delta.partial_json;
+              }
             } else if (event.type === 'message_delta') {
               outputTokens = event.usage?.output_tokens || 0;
-              yield { id, model, delta: '', finish_reason: event.delta?.stop_reason || 'end_turn', input_tokens: inputTokens, output_tokens: outputTokens };
+
+              // Emit accumulated tool_calls if any
+              const toolCalls: ToolCall[] = [];
+              for (const tc of pendingToolCalls.values()) {
+                toolCalls.push({
+                  id: tc.id,
+                  type: 'function',
+                  function: { name: tc.name, arguments: tc.inputJson || '{}' },
+                });
+              }
+
+              yield {
+                id, model, delta: '',
+                finish_reason: event.delta?.stop_reason || 'end_turn',
+                input_tokens: inputTokens, output_tokens: outputTokens,
+                tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
+              };
             }
           } catch { /* skip malformed */ }
         }

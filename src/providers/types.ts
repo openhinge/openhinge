@@ -1,6 +1,8 @@
 export interface ChatMessage {
-  role: 'system' | 'user' | 'assistant';
+  role: 'system' | 'user' | 'assistant' | 'tool';
   content: string;
+  tool_calls?: ToolCall[];
+  tool_call_id?: string;
 }
 
 export interface JsonSchema {
@@ -11,6 +13,21 @@ export interface JsonSchema {
   [key: string]: unknown;
 }
 
+export interface ToolDefinition {
+  type?: 'function';
+  function?: { name: string; description?: string; parameters?: JsonSchema };
+  // Anthropic format
+  name?: string;
+  description?: string;
+  input_schema?: JsonSchema;
+}
+
+export interface ToolCall {
+  id: string;
+  type: 'function';
+  function: { name: string; arguments: string };
+}
+
 export interface ChatRequest {
   messages: ChatMessage[];
   model?: string;
@@ -19,6 +36,8 @@ export interface ChatRequest {
   stream?: boolean;
   stop?: string[];
   response_schema?: JsonSchema;
+  tools?: ToolDefinition[];
+  tool_choice?: unknown;
 }
 
 export interface FallbackAttempt {
@@ -35,6 +54,7 @@ export interface ChatResponse {
   input_tokens: number;
   output_tokens: number;
   finish_reason: string;
+  tool_calls?: ToolCall[];
   fallback_attempts?: FallbackAttempt[];
 }
 
@@ -45,6 +65,7 @@ export interface ChatChunk {
   finish_reason: string | null;
   input_tokens?: number;
   output_tokens?: number;
+  tool_calls?: ToolCall[];
 }
 
 export interface HealthStatus {
