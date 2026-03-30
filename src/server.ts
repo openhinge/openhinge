@@ -20,6 +20,7 @@ import { keyAdminRoutes } from './routes/admin/keys.js';
 import { costAdminRoutes } from './routes/admin/cost.js';
 import { systemAdminRoutes } from './routes/admin/system.js';
 import { settingsAdminRoutes } from './routes/admin/settings.js';
+import { connectAdminRoutes } from './routes/admin/connect.js';
 
 export async function createServer(config: Config) {
   // Init database
@@ -81,6 +82,7 @@ export async function createServer(config: Config) {
     await adminApp.register(keyAdminRoutes);
     await adminApp.register(costAdminRoutes);
     await adminApp.register(settingsAdminRoutes);
+    await adminApp.register(connectAdminRoutes);
   });
 
   // Root redirect to dashboard

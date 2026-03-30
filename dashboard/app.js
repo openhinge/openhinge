@@ -2212,39 +2212,32 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
     }});
 
     if (data?.key) {
-      const host = window.location.hostname || 'localhost';
-      const port = window.location.port || '3700';
-      const baseUrl = `http://${host}:${port}/v1`;
+      window._ohCreatedKey = data.key;
 
-      const configSnippet = JSON.stringify({
-        openhinge: {
-          baseUrl: baseUrl,
-          apiKey: data.key,
-          api: 'openai-completions',
-          models: [{
-            id: model,
-            name: `OpenHinge — ${model}`,
-            reasoning: false,
-            input: ['text'],
-            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-            contextWindow: 200000,
-            maxTokens: 16384,
-          }],
-        },
-      }, null, 2);
+      // Try auto-connect
+      let connectStatus = '';
+      try {
+        const detectRes = await api('/admin/connect/detect');
+        const ocApp = detectRes?.apps?.find(a => a.id === 'openclaw' && a.detected);
+        if (ocApp) {
+          connectStatus = `
+            <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
+              <button class="btn btn-primary" style="width:100%;display:flex;align-items:center;justify-content:space-between"
+                onclick="OS.autoConnect('openclaw', 'OpenClaw')" id="connect-btn-openclaw">
+                <span>Auto-Connect to OpenClaw</span>
+                <span style="font-size:11px;opacity:0.7">${ocApp.connected ? 'Reconnect' : 'Connect'}</span>
+              </button>
+              <p style="font-size:11px;color:var(--text-secondary);margin-top:6px">Automatically configures OpenClaw to use this key</p>
+            </div>`;
+        }
+      } catch {}
 
       closeModal();
       openModal('OpenClaw Key Created', `
         <p style="margin-bottom:12px;font-size:13px;color:var(--text-secondary)">Save this key now. It will not be shown again.</p>
-        <div class="code-block" style="word-break:break-all;margin-bottom:12px">${data.key}</div>
-        <p style="margin-bottom:8px;font-size:13px;font-weight:600">Add to openclaw.json → models.providers:</p>
-        <div class="code-block" style="font-size:11px;max-height:240px;overflow:auto;white-space:pre;margin-bottom:12px">${h(configSnippet)}</div>
-        <p style="margin-bottom:8px;font-size:13px;font-weight:600">Then set as primary model:</p>
-        <div class="code-block" style="font-size:11px;white-space:pre;margin-bottom:12px">"primary": "openhinge/${h(model)}"</div>
-        <div style="display:flex;gap:8px">
-          <button class="btn btn-secondary" style="flex:1" onclick="navigator.clipboard.writeText('${data.key}');OS.toast('Key copied!','success')">Copy Key</button>
-          <button class="btn btn-primary" style="flex:1" onclick="navigator.clipboard.writeText(${h(JSON.stringify(configSnippet))});OS.toast('Config copied!','success')">Copy Config</button>
-        </div>
+        <div class="code-block" style="word-break:break-all;margin-bottom:12px">${h(data.key)}</div>
+        <button class="btn btn-primary" style="width:100%" onclick="navigator.clipboard.writeText(window._ohCreatedKey);OS.toast('Copied!','success')">Copy Key</button>
+        ${connectStatus}
       `);
     }
     loaders.keys();
@@ -2284,15 +2277,63 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
       // Store for copy button
       window._ohCreatedKey = data.key;
 
+      // Detect connectable apps
+      let connectHtml = '';
+      try {
+        const detectRes = await api('/admin/connect/detect');
+        const apps = detectRes?.apps?.filter(a => a.detected) || [];
+        if (apps.length > 0) {
+          connectHtml = `
+            <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
+              <p style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px">Auto-Connect</p>
+              ${apps.map(a => `
+                <button class="btn ${a.connected ? 'btn-ghost' : 'btn-primary'}" style="width:100%;margin-top:6px;display:flex;align-items:center;justify-content:space-between"
+                  onclick="OS.autoConnect('${a.id}', '${a.name}')" id="connect-btn-${a.id}">
+                  <span>${a.name}</span>
+                  <span style="font-size:11px;opacity:0.7">${a.connected ? 'Reconnect' : 'Connect'}</span>
+                </button>
+              `).join('')}
+            </div>`;
+        }
+      } catch {}
+
       closeModal();
       openModal('Key Created', `
         <p style="margin-bottom:12px;font-size:13px;color:var(--text-secondary)">Save this key now. It will not be shown again.</p>
         <div class="code-block" style="word-break:break-all">${h(data.key)}</div>
         <button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="navigator.clipboard.writeText(window._ohCreatedKey);OS.toast('Copied!','success')">Copy Key</button>
+        ${connectHtml}
       `);
 
       loaders.keys();
     } catch (err) { console.error('saveKey error:', err); toast('Error: ' + err.message, 'error'); }
+  }
+
+  async function autoConnect(appId, appName) {
+    const btn = document.getElementById(`connect-btn-${appId}`);
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span>Connecting...</span>'; }
+    try {
+      const res = await api('/admin/connect', { method: 'POST', body: { app: appId, api_key: window._ohCreatedKey } });
+      if (res.error) { toast(`Failed to connect ${appName}: ${res.error}`, 'error'); return; }
+      toast(`${appName} connected! ${res.models?.length || 0} models available.`, 'success');
+      if (btn) {
+        btn.innerHTML = `<span>${appName}</span><span style="font-size:11px;color:var(--success)">Connected</span>`;
+        btn.disabled = true;
+        btn.classList.remove('btn-primary');
+        btn.classList.add('btn-ghost');
+      }
+    } catch (err) {
+      toast(`Failed to connect ${appName}: ${err.message}`, 'error');
+    } finally {
+      if (btn && !btn.innerHTML.includes('Connected')) { btn.disabled = false; btn.innerHTML = `<span>${appName}</span><span style="font-size:11px">Retry</span>`; }
+    }
+  }
+
+  async function disconnectApp(appId, appName) {
+    if (!confirm(`Disconnect ${appName} from OpenHinge?`)) return;
+    const res = await api('/admin/connect/disconnect', { method: 'POST', body: { app: appId } });
+    if (res.error) { toast(res.error, 'error'); return; }
+    toast(`${appName} disconnected`, 'success');
   }
 
   async function revokeKey(id) {
@@ -2615,7 +2656,7 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
     closeModal, toast, navigate, welcomeSubmit, welcomeGo,
     addProviderModal, addProviderStep2, showApiKeyForm, showClaudeOauthForm, saveClaudeOauth, claudeOAuthLogin, saveProvider, editProviderModal, updateProvider, deleteProvider, healthCheck, healthCheckOne, fetchModels, onProviderTypeChange, quickAdd, openApiPage,
     addSoulModal, saveSoul, editSoulModal, deleteSoul, onSoulProviderChange,
-    createKeyModal, createApiKeyForm, createOpenClawKeyForm, saveOpenClawKey, saveKey, revokeKey, reactivateKey, deleteKey, toggleAllSouls,
+    createKeyModal, createApiKeyForm, createOpenClawKeyForm, saveOpenClawKey, saveKey, revokeKey, reactivateKey, deleteKey, toggleAllSouls, autoConnect, disconnectApp,
     saveCloudflare, saveSettings, changePassword, scrollDoc,
     cfConnect, cfZoneChange,
     provFilter, provClearFilters, provToggle, provSelectAll, provSelectNone, provBulk,
