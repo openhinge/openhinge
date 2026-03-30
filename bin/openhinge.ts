@@ -390,10 +390,11 @@ providerCmd.command('add')
   });
 
 providerCmd.command('add-claude')
-  .description('Auto-import Claude subscription from this computer')
+  .description('Import Claude subscription — auto-detect or paste token')
   .option('-n, --name <name>', 'Provider name')
   .option('-m, --model <model>', 'Default model')
   .option('-p, --priority <n>', 'Priority (higher = preferred)', '10')
+  .option('--token <token>', 'Paste exported token (from: openhinge provider export-claude)')
   .action(async (opts) => {
     const { execSync } = await import('node:child_process');
     const { readFileSync, existsSync, readdirSync } = await import('node:fs');
@@ -402,8 +403,26 @@ providerCmd.command('add-claude')
 
     let raw: string | undefined;
 
+    // Strategy 0: Direct token import (from export-claude)
+    if (opts.token) {
+      try {
+        raw = Buffer.from(opts.token, 'base64').toString('utf-8');
+        // Validate it's proper JSON with the expected fields
+        const test = JSON.parse(raw);
+        if (!test.claudeAiOauth?.accessToken) {
+          console.error('Invalid token — missing OAuth credentials.');
+          console.error('Generate one with: openhinge provider export-claude (on a machine with Claude Code)');
+          process.exit(1);
+        }
+        console.log('Importing from provided token...');
+      } catch {
+        console.error('Invalid token format. Use the output from: openhinge provider export-claude');
+        process.exit(1);
+      }
+    }
+
     // Strategy 1: macOS Keychain
-    if (platform() === 'darwin') {
+    if (!raw && platform() === 'darwin') {
       try {
         raw = execSync('security find-generic-password -s "Claude Code-credentials" -w', {
           encoding: 'utf-8',
@@ -472,16 +491,18 @@ providerCmd.command('add-claude')
     if (!raw) {
       console.error('No Claude Code credentials found on this computer.');
       console.error('');
-      console.error('This command imports credentials from a local Claude Code installation.');
-      console.error('If Claude Code is not installed here, use an API key instead:');
+      console.error('Option 1: Export from another machine (recommended for subscriptions)');
+      console.error('  On a machine with Claude Code logged in, run:');
+      console.error('    openhinge provider export-claude');
+      console.error('  Then paste the command it gives you on this machine.');
       console.error('');
-      console.error('  openhinge provider add -n "Claude" -t claude -k YOUR_API_KEY -m claude-sonnet-4-6');
-      console.error('');
-      console.error('Get an API key at: https://console.anthropic.com/settings/keys');
-      console.error('');
-      console.error('Or install Claude Code first:');
+      console.error('Option 2: Install Claude Code here');
       console.error('  npm install -g @anthropic-ai/claude-code');
       console.error('  claude   # then run /login');
+      console.error('  openhinge provider add-claude');
+      console.error('');
+      console.error('Option 3: Use an API key');
+      console.error('  openhinge provider add -n "Claude" -t claude -k YOUR_API_KEY -m claude-sonnet-4-6');
       process.exit(1);
     }
 
@@ -526,6 +547,65 @@ providerCmd.command('add-claude')
     console.log(`Token expires: ${new Date(oauth.expiresAt).toLocaleString()}`);
     console.log('Auto-refresh enabled with refresh token.');
     closeDatabase();
+  });
+
+providerCmd.command('export-claude')
+  .description('Export Claude subscription token (copy to another machine)')
+  .action(async () => {
+    const { execSync } = await import('node:child_process');
+    const { readFileSync, existsSync, readdirSync } = await import('node:fs');
+    const { resolve } = await import('node:path');
+    const { homedir, platform } = await import('node:os');
+
+    let raw: string | undefined;
+
+    // macOS Keychain
+    if (platform() === 'darwin') {
+      try {
+        raw = execSync('security find-generic-password -s "Claude Code-credentials" -w', {
+          encoding: 'utf-8',
+          stdio: ['pipe', 'pipe', 'pipe'],
+        }).trim();
+      } catch { /* not in keychain */ }
+    }
+
+    // Search credential files
+    if (!raw) {
+      const searchPaths: string[] = [];
+      if (process.env.CLAUDE_CONFIG_DIR) {
+        searchPaths.push(resolve(process.env.CLAUDE_CONFIG_DIR, '.credentials.json'));
+      }
+      searchPaths.push(resolve(homedir(), '.claude', '.credentials.json'));
+      if (platform() !== 'win32') {
+        searchPaths.push('/root/.claude/.credentials.json');
+        try { for (const u of readdirSync('/home')) searchPaths.push(`/home/${u}/.claude/.credentials.json`); } catch {}
+      }
+      for (const p of [...new Set(searchPaths)]) {
+        if (existsSync(p)) {
+          try { raw = readFileSync(p, 'utf-8'); break; } catch {}
+        }
+      }
+    }
+
+    if (!raw) {
+      console.error('No Claude Code credentials found. Make sure Claude Code is logged in.');
+      process.exit(1);
+    }
+
+    // Validate
+    const creds = JSON.parse(raw);
+    if (!creds.claudeAiOauth?.accessToken) {
+      console.error('No OAuth token found in credentials.');
+      process.exit(1);
+    }
+
+    const token = Buffer.from(raw).toString('base64');
+    console.log('');
+    console.log('Claude subscription token exported. Run this on the other machine:');
+    console.log('');
+    console.log(`  openhinge provider add-claude --token ${token}`);
+    console.log('');
+    console.log('Token expires in ~8 hours. The server will auto-refresh using the refresh token.');
   });
 
 providerCmd.command('refresh-claude')
