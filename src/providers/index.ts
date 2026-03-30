@@ -59,28 +59,42 @@ export function loadProviders(encryptionKey: string): void {
     }
   }
 
-  // Start background token refresh — every 30 min, refresh any expiring tokens
+  // Start background token refresh — every 15 min, proactively refresh expiring tokens
+  // OAuth tokens (Claude, OpenAI, Gemini) typically expire in 1-8 hours.
+  // We refresh 30 min before expiry to avoid any request-time failures.
   if (_refreshInterval) clearInterval(_refreshInterval);
-  _refreshInterval = setInterval(async () => {
+  const refreshAllTokens = async () => {
     for (const [id, provider] of providers) {
       try {
         const creds = (provider as any).config?.credentials;
         if (!creds?.expires_at) continue;
         const expiresMs = Number(creds.expires_at);
-        const bufferMs = 10 * 60 * 1000; // refresh if expiring within 10 min
+        const bufferMs = 30 * 60 * 1000; // refresh 30 min before expiry
         if (Date.now() + bufferMs >= expiresMs) {
           logger.info({ id, type: (provider as any).type }, 'Background token refresh');
           const refreshed = await provider.refreshToken();
           if (refreshed) {
-            // Update health status back to healthy
             db.prepare("UPDATE providers SET health_status = 'healthy' WHERE id = ?").run(id);
+          } else {
+            // Token refresh failed — mark as degraded so dashboard shows warning
+            const timeLeft = expiresMs - Date.now();
+            if (timeLeft <= 0) {
+              logger.error({ id, type: (provider as any).type }, 'Token expired and refresh failed — provider DOWN');
+              db.prepare("UPDATE providers SET health_status = 'down' WHERE id = ?").run(id);
+            } else {
+              logger.warn({ id, type: (provider as any).type, expiresInMin: Math.round(timeLeft / 60000) }, 'Token refresh failed — will retry');
+              db.prepare("UPDATE providers SET health_status = 'degraded' WHERE id = ?").run(id);
+            }
           }
         }
       } catch (err: any) {
-        logger.error({ id, err: err.message }, 'Background refresh failed');
+        logger.error({ id, err: err.message }, 'Background refresh error');
       }
     }
-  }, 30 * 60 * 1000); // every 30 min
+  };
+  // Run immediately on startup, then every 15 min
+  refreshAllTokens();
+  _refreshInterval = setInterval(refreshAllTokens, 15 * 60 * 1000);
 }
 
 export function getProvider(id: string): BaseProvider | undefined {
