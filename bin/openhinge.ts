@@ -472,6 +472,15 @@ program.command('update')
       }
 
       console.log(`${behind} new commit(s) available. Updating...`);
+
+      // Stash any local changes (e.g. package-lock.json drift)
+      try {
+        const status = execSync('git status --porcelain', { cwd: root, encoding: 'utf-8' }).trim();
+        if (status) {
+          execSync('git stash --include-untracked', { cwd: root, stdio: 'pipe' });
+        }
+      } catch { /* no changes to stash */ }
+
       execSync('git pull --ff-only origin main', { cwd: root, stdio: 'inherit' });
 
       console.log('Installing dependencies...');
