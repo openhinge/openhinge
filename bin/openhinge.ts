@@ -396,47 +396,84 @@ providerCmd.command('add-claude')
   .option('-p, --priority <n>', 'Priority (higher = preferred)', '10')
   .action(async (opts) => {
     const { execSync } = await import('node:child_process');
-    const { readFileSync, existsSync } = await import('node:fs');
+    const { readFileSync, existsSync, readdirSync } = await import('node:fs');
     const { resolve } = await import('node:path');
     const { homedir, platform } = await import('node:os');
 
-    let creds: any;
+    let raw: string | undefined;
 
+    // Strategy 1: macOS Keychain
     if (platform() === 'darwin') {
-      // macOS: Read from Keychain
-      let raw: string;
       try {
         raw = execSync('security find-generic-password -s "Claude Code-credentials" -w', {
           encoding: 'utf-8',
           stdio: ['pipe', 'pipe', 'pipe'],
         }).trim();
-      } catch {
-        // Fallback to file on macOS too
-        const filePath = resolve(process.env.CLAUDE_CONFIG_DIR || resolve(homedir(), '.claude'), '.credentials.json');
-        if (existsSync(filePath)) {
-          raw = readFileSync(filePath, 'utf-8');
-        } else {
-          console.error('No Claude Code credentials found on this computer.');
-          console.error('Make sure Claude Code is installed and you are logged in (/login).');
-          process.exit(1);
+      } catch { /* not in keychain */ }
+    }
+
+    // Strategy 2: Search for .credentials.json across all likely locations
+    if (!raw) {
+      const searchPaths: string[] = [];
+
+      // CLAUDE_CONFIG_DIR env var
+      if (process.env.CLAUDE_CONFIG_DIR) {
+        searchPaths.push(resolve(process.env.CLAUDE_CONFIG_DIR, '.credentials.json'));
+      }
+
+      // Current user's home
+      searchPaths.push(resolve(homedir(), '.claude', '.credentials.json'));
+
+      // Root's home (if running as root, check regular users too)
+      if (process.getuid?.() === 0) {
+        searchPaths.push('/root/.claude/.credentials.json');
+        // Scan /home/* for any user that has Claude Code credentials
+        try {
+          const homeUsers = readdirSync('/home');
+          for (const user of homeUsers) {
+            searchPaths.push(resolve('/home', user, '.claude', '.credentials.json'));
+          }
+        } catch { /* /home not readable */ }
+      } else {
+        // Not root — also check /root in case they logged in as root before
+        searchPaths.push('/root/.claude/.credentials.json');
+      }
+
+      // Deduplicate
+      const uniquePaths = [...new Set(searchPaths)];
+
+      for (const p of uniquePaths) {
+        if (existsSync(p)) {
+          try {
+            raw = readFileSync(p, 'utf-8');
+            console.log(`Found Claude Code credentials at ${p}`);
+            break;
+          } catch { /* permission denied, try next */ }
         }
       }
-      try { creds = JSON.parse(raw!); } catch {
-        console.error('Failed to parse Claude Code credentials.');
-        process.exit(1);
+    }
+
+    if (!raw) {
+      console.error('No Claude Code credentials found on this computer.');
+      console.error('Searched:');
+      console.error('  - macOS Keychain (if macOS)');
+      console.error(`  - ${resolve(homedir(), '.claude', '.credentials.json')}`);
+      if (process.getuid?.() === 0) {
+        console.error('  - /home/*/.claude/.credentials.json');
+      } else {
+        console.error('  - /root/.claude/.credentials.json');
       }
-    } else {
-      // Linux: Read from ~/.claude/.credentials.json
-      const filePath = resolve(process.env.CLAUDE_CONFIG_DIR || resolve(homedir(), '.claude'), '.credentials.json');
-      if (!existsSync(filePath)) {
-        console.error(`No Claude Code credentials found at ${filePath}`);
-        console.error('Make sure Claude Code is installed and you are logged in (/login).');
-        process.exit(1);
-      }
-      try { creds = JSON.parse(readFileSync(filePath, 'utf-8')); } catch {
-        console.error('Failed to parse Claude Code credentials.');
-        process.exit(1);
-      }
+      console.error('');
+      console.error('Make sure Claude Code is installed and logged in:');
+      console.error('  npm install -g @anthropic-ai/claude-code');
+      console.error('  claude   # then run /login');
+      process.exit(1);
+    }
+
+    let creds: any;
+    try { creds = JSON.parse(raw); } catch {
+      console.error('Failed to parse Claude Code credentials.');
+      process.exit(1);
     }
 
     const oauth = creds.claudeAiOauth;
@@ -481,32 +518,48 @@ providerCmd.command('refresh-claude')
   .option('--id <id>', 'Provider ID to refresh (refreshes all Claude providers if omitted)')
   .action(async (opts) => {
     const { execSync } = await import('node:child_process');
-    const { readFileSync, existsSync } = await import('node:fs');
+    const { readFileSync, existsSync, readdirSync } = await import('node:fs');
     const { resolve } = await import('node:path');
     const { homedir, platform } = await import('node:os');
 
     let raw: string | undefined;
 
+    // macOS Keychain
     if (platform() === 'darwin') {
       try {
         raw = execSync('security find-generic-password -s "Claude Code-credentials" -w', {
           encoding: 'utf-8',
           stdio: ['pipe', 'pipe', 'pipe'],
         }).trim();
-      } catch { /* try file fallback */ }
+      } catch { /* try file */ }
     }
 
+    // Search credential files
     if (!raw) {
-      const filePath = resolve(process.env.CLAUDE_CONFIG_DIR || resolve(homedir(), '.claude'), '.credentials.json');
-      if (existsSync(filePath)) {
-        raw = readFileSync(filePath, 'utf-8');
+      const searchPaths: string[] = [];
+      if (process.env.CLAUDE_CONFIG_DIR) {
+        searchPaths.push(resolve(process.env.CLAUDE_CONFIG_DIR, '.credentials.json'));
+      }
+      searchPaths.push(resolve(homedir(), '.claude', '.credentials.json'));
+      if (process.getuid?.() === 0) {
+        searchPaths.push('/root/.claude/.credentials.json');
+        try { for (const u of readdirSync('/home')) searchPaths.push(`/home/${u}/.claude/.credentials.json`); } catch {}
       } else {
-        console.error('No Claude Code credentials found on this computer.');
-        process.exit(1);
+        searchPaths.push('/root/.claude/.credentials.json');
+      }
+      for (const p of [...new Set(searchPaths)]) {
+        if (existsSync(p)) {
+          try { raw = readFileSync(p, 'utf-8'); break; } catch {}
+        }
       }
     }
 
-    const oauth = JSON.parse(raw!).claudeAiOauth;
+    if (!raw) {
+      console.error('No Claude Code credentials found on this computer.');
+      process.exit(1);
+    }
+
+    const oauth = JSON.parse(raw).claudeAiOauth;
     if (!oauth?.accessToken) {
       console.error('No OAuth token found.');
       process.exit(1);

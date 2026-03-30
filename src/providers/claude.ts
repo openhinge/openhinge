@@ -48,14 +48,15 @@ export class ClaudeProvider extends BaseProvider {
   // then fall back to OAuth refresh_token flow
   async refreshToken(): Promise<boolean> {
     // Strategy 1: Read fresh token from Claude Code's local credential store
-    // macOS: Keychain, Linux: ~/.claude/.credentials.json
+    // Searches: macOS Keychain, current user, root, /home/* users
     if (this.isSubscription && this.config.credentials.client_id === '9d1c250a-e61b-44d9-88ed-5944d1962f5e') {
       try {
         let raw: string | undefined;
-        const { platform } = await import('node:os');
+        const { platform, homedir } = await import('node:os');
+        const { readFileSync, existsSync, readdirSync } = await import('node:fs');
+        const { resolve } = await import('node:path');
 
         if (platform() === 'darwin') {
-          // macOS Keychain
           const { execSync } = await import('node:child_process');
           try {
             raw = execSync(
@@ -66,13 +67,19 @@ export class ClaudeProvider extends BaseProvider {
         }
 
         if (!raw) {
-          // Linux file or macOS fallback: ~/.claude/.credentials.json
-          const { readFileSync, existsSync } = await import('node:fs');
-          const { resolve } = await import('node:path');
-          const { homedir } = await import('node:os');
-          const filePath = resolve(process.env.CLAUDE_CONFIG_DIR || resolve(homedir(), '.claude'), '.credentials.json');
-          if (existsSync(filePath)) {
-            raw = readFileSync(filePath, 'utf-8');
+          // Search multiple locations for .credentials.json
+          const searchPaths: string[] = [];
+          if (process.env.CLAUDE_CONFIG_DIR) {
+            searchPaths.push(resolve(process.env.CLAUDE_CONFIG_DIR, '.credentials.json'));
+          }
+          searchPaths.push(resolve(homedir(), '.claude', '.credentials.json'));
+          searchPaths.push('/root/.claude/.credentials.json');
+          try { for (const u of readdirSync('/home')) searchPaths.push(`/home/${u}/.claude/.credentials.json`); } catch {}
+
+          for (const p of [...new Set(searchPaths)]) {
+            if (existsSync(p)) {
+              try { raw = readFileSync(p, 'utf-8'); break; } catch {}
+            }
           }
         }
 
