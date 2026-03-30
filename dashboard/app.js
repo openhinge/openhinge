@@ -182,10 +182,29 @@ const OS = (() => {
   // -- Dashboard --
   loaders.dashboard = async () => {
     const el = document.getElementById('page-dashboard');
-    const [status, logs] = await Promise.all([
+    const [status, logs, provData, soulData, keyData] = await Promise.all([
       api('/admin/system/status'),
       api('/admin/cost/logs?limit=5'),
+      api('/admin/providers'),
+      api('/admin/souls'),
+      api('/admin/keys'),
     ]);
+
+    const providers = provData.data || [];
+    const souls = soulData.data || [];
+    const keys = keyData.data || [];
+
+    const healthBadge = (s) => {
+      if (s === 'healthy') return '<span class="badge badge-success"><span class="badge-dot"></span>Healthy</span>';
+      if (s === 'degraded') return '<span class="badge badge-warning"><span class="badge-dot"></span>Degraded</span>';
+      if (s === 'down') return '<span class="badge badge-danger"><span class="badge-dot"></span>Down</span>';
+      return '<span class="badge badge-muted">Unknown</span>';
+    };
+
+    const providerTypeIcon = (type) => {
+      const icons = { claude: '🟣', openai: '🟢', gemini: '🔵', ollama: '⚪' };
+      return icons[type] || '⚫';
+    };
 
     el.innerHTML = `
       <div class="stats-grid">
@@ -196,18 +215,71 @@ const OS = (() => {
         ${statCard('Memory', `${status.memory?.heap || 0} MB`, `Uptime: ${formatUptime(status.uptime)}`)}
       </div>
 
-      <div class="card">
-        <div class="card-header"><h3>Recent Requests</h3></div>
-        ${logs.data?.length ? `<div class="table-wrapper" style="border:none">
-          <table><thead><tr><th>Soul</th><th>Provider</th><th>Tokens</th><th>Latency</th><th>Time</th></tr></thead>
-          <tbody>${logs.data.map(l => `<tr>
-            <td><code>${h(l.soul_name || '—')}</code></td>
-            <td>${h(l.provider_name || '—')}</td>
-            <td class="text-mono">${num(l.input_tokens)}/${num(l.output_tokens)}</td>
-            <td class="text-mono">${l.latency_ms}ms</td>
-            <td class="text-muted text-sm">${ago(l.created_at)}</td>
-          </tr>`).join('')}</tbody></table>
-        </div>` : '<p class="text-muted text-sm" style="padding:16px">No requests yet</p>'}
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div class="card">
+          <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+            <h3>Providers</h3>
+            <button class="btn btn-ghost btn-sm" onclick="OS.navigate('providers')" style="font-size:11px">View All →</button>
+          </div>
+          ${providers.length ? `<div class="table-wrapper" style="border:none">
+            <table><thead><tr><th>Provider</th><th>Type</th><th>Status</th></tr></thead>
+            <tbody>${providers.slice(0, 6).map(p => `<tr>
+              <td style="font-weight:500">${providerTypeIcon(p.type)} ${h(p.name)}</td>
+              <td class="text-mono text-sm">${h(p.type)}</td>
+              <td>${healthBadge(p.health_status)}</td>
+            </tr>`).join('')}</tbody></table>
+          </div>` : '<p class="text-muted text-sm" style="padding:16px">No providers configured</p>'}
+        </div>
+
+        <div class="card">
+          <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+            <h3>Souls</h3>
+            <button class="btn btn-ghost btn-sm" onclick="OS.navigate('souls')" style="font-size:11px">View All →</button>
+          </div>
+          ${souls.length ? `<div class="table-wrapper" style="border:none">
+            <table><thead><tr><th>Soul</th><th>Slug</th><th>Model</th></tr></thead>
+            <tbody>${souls.slice(0, 6).map(s => `<tr>
+              <td style="font-weight:500">${h(s.name)}</td>
+              <td><code>${h(s.slug)}</code></td>
+              <td class="text-mono text-sm">${h(s.model || 'default')}</td>
+            </tr>`).join('')}</tbody></table>
+          </div>` : '<p class="text-muted text-sm" style="padding:16px">No souls created</p>'}
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px">
+        <div class="card">
+          <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+            <h3>Recent Requests</h3>
+            <button class="btn btn-ghost btn-sm" onclick="OS.navigate('logs')" style="font-size:11px">View All →</button>
+          </div>
+          ${logs.data?.length ? `<div class="table-wrapper" style="border:none">
+            <table><thead><tr><th>Soul</th><th>Provider</th><th>Tokens</th><th>Latency</th><th>Time</th></tr></thead>
+            <tbody>${logs.data.map(l => `<tr>
+              <td><code>${h(l.soul_name || '—')}</code></td>
+              <td>${h(l.provider_name || '—')}</td>
+              <td class="text-mono">${num(l.input_tokens)}/${num(l.output_tokens)}</td>
+              <td class="text-mono">${l.latency_ms}ms</td>
+              <td class="text-muted text-sm">${ago(l.created_at)}</td>
+            </tr>`).join('')}</tbody></table>
+          </div>` : '<p class="text-muted text-sm" style="padding:16px">No requests yet</p>'}
+        </div>
+
+        <div class="card">
+          <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+            <h3>API Keys</h3>
+            <button class="btn btn-ghost btn-sm" onclick="OS.navigate('keys')" style="font-size:11px">View All →</button>
+          </div>
+          ${keys.length ? `<div class="table-wrapper" style="border:none">
+            <table><thead><tr><th>Name</th><th>Prefix</th><th>Requests</th><th>Last Used</th></tr></thead>
+            <tbody>${keys.slice(0, 6).map(k => `<tr${k.is_enabled ? '' : ' style="opacity:0.5"'}>
+              <td style="font-weight:500">${h(k.name)}${k.is_enabled ? '' : ' <span class="badge badge-danger" style="margin-left:4px;font-size:9px">Revoked</span>'}</td>
+              <td><code>${h(k.key_prefix)}...</code></td>
+              <td class="text-mono">${num(k.total_requests)}</td>
+              <td class="text-muted text-sm">${ago(k.last_used_at)}</td>
+            </tr>`).join('')}</tbody></table>
+          </div>` : '<p class="text-muted text-sm" style="padding:16px">No API keys created</p>'}
+        </div>
       </div>
     `;
 
