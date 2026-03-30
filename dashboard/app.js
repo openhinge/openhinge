@@ -415,17 +415,20 @@ const OS = (() => {
       </div>
       ${data?.length ? `<div class="table-wrapper"><table>
         <thead><tr><th>Name</th><th>Prefix</th><th>Souls</th><th>Rate Limit</th><th>Requests</th><th>Last Used</th><th></th></tr></thead>
-        <tbody>${data.map(k => `<tr>
-          <td style="color:var(--text);font-weight:500">${h(k.name)}</td>
+        <tbody>${data.map(k => `<tr${k.is_enabled ? '' : ' style="opacity:0.5"'}>
+          <td style="color:var(--text);font-weight:500">
+            ${h(k.name)}
+            ${k.is_enabled ? '' : ' <span class="badge badge-danger" style="margin-left:6px">Revoked</span>'}
+          </td>
           <td><code>${h(k.key_prefix)}...</code></td>
           <td>${soulBadges(k)}</td>
           <td class="text-mono">${k.rate_limit_rpm}/min</td>
           <td class="text-mono">${num(k.total_requests)}</td>
           <td class="text-muted text-sm">${ago(k.last_used_at)}</td>
           <td style="text-align:right">
-            <button class="btn btn-ghost btn-icon btn-sm" title="Revoke" onclick="OS.revokeKey('${k.id}')">
+            ${k.is_enabled ? `<button class="btn btn-ghost btn-icon btn-sm" title="Revoke" onclick="OS.revokeKey('${k.id}')">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--warning)" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
-            </button>
+            </button>` : ''}
             <button class="btn btn-ghost btn-icon btn-sm" title="Delete" onclick="OS.deleteKey('${k.id}')">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
             </button>
@@ -2146,14 +2149,16 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
 
   async function revokeKey(id) {
     if (!confirm('Revoke this key? It will stop working immediately.')) return;
-    await api(`/admin/keys/${id}/revoke`, { method: 'POST' });
+    const res = await api(`/admin/keys/${id}/revoke`, { method: 'POST' });
+    if (res.error) { toast(res.error, 'error'); return; }
     toast('Key revoked', 'success'); loaders.keys();
   }
 
   async function deleteKey(id) {
     if (!confirm('Delete this key permanently?')) return;
-    await api(`/admin/keys/${id}`, { method: 'DELETE' });
-    toast('Key deleted'); loaders.keys();
+    const res = await api(`/admin/keys/${id}`, { method: 'DELETE' });
+    if (res.error) { toast(res.error, 'error'); return; }
+    toast('Key deleted', 'success'); loaders.keys();
   }
 
   // Cloudflare
