@@ -121,7 +121,11 @@ openhinge provider add -n "Local Ollama" -t ollama -u http://localhost:11434 -m 
 openhinge provider add-claude
 openhinge provider add-claude -m claude-opus-4-6 -p 10
 
-# Refresh Claude subscription tokens from Keychain
+# Import Claude subscription from another machine (no Claude Code needed on this machine)
+openhinge provider export-claude                    # Run on machine WITH Claude Code
+openhinge provider add-claude --token <token>       # Run on remote server
+
+# Refresh Claude subscription tokens
 openhinge provider refresh-claude
 openhinge provider refresh-claude --id <provider-id>
 
@@ -139,6 +143,17 @@ openhinge provider health
 | `-u, --url <url>` | Custom base URL (for self-hosted or proxies) |
 | `-m, --model <model>` | Default model for this provider |
 | `-p, --priority <n>` | Priority — higher number = preferred (default: 0) |
+
+**Provider add-claude options:**
+
+| Flag | Description |
+|------|-------------|
+| `-n, --name <name>` | Provider display name |
+| `-m, --model <model>` | Default model |
+| `-p, --priority <n>` | Priority (default: 10) |
+| `--token <token>` | Import token from `export-claude` (for remote servers) |
+
+> **Using subscriptions on remote servers:** Run `openhinge provider export-claude` on a machine where Claude Code is logged in. It outputs a token you can paste on any other machine with `openhinge provider add-claude --token <token>`. No Claude Code or API key needed on the server.
 
 ### Souls
 
@@ -172,6 +187,8 @@ openhinge key list
 openhinge key create -n "my-app"
 openhinge key create -n "openclaw-key" -r 120
 openhinge key create -n "translator-only" -s <soul-id>
+openhinge key create -n "anthropic-key" -f anthropic
+openhinge key create -n "openclaw-key" -f openclaw -r 120
 ```
 
 **Key create options:**
@@ -181,6 +198,7 @@ openhinge key create -n "translator-only" -s <soul-id>
 | `-n, --name <name>` | Key display name (required) |
 | `-s, --soul <id>` | Bind to a specific soul ID |
 | `-r, --rpm <n>` | Rate limit per minute (default: 60) |
+| `-f, --format <format>` | API format: `openai` (default), `anthropic`, or `openclaw` |
 
 > **Note:** The full API key is only shown once at creation. Save it immediately.
 
