@@ -60,7 +60,7 @@ echo ""
 if [ -d "$INSTALL_DIR/.git" ]; then
   echo -e "${CYAN}→${RESET} Updating existing installation at ${BOLD}$INSTALL_DIR${RESET}"
   cd "$INSTALL_DIR"
-  git stash --include-untracked 2>/dev/null || true
+  git checkout -- package-lock.json 2>/dev/null || true
   git pull --ff-only origin main
 else
   echo -e "${CYAN}→${RESET} Installing to ${BOLD}$INSTALL_DIR${RESET}"
