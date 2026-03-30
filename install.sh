@@ -129,7 +129,7 @@ npm link --silent 2>/dev/null || sudo npm link --silent 2>/dev/null || true
 
 # Strategy 2: Direct symlink in /usr/local/bin as fallback
 if ! command -v openhinge &>/dev/null; then
-  BIN_TARGET="$INSTALL_DIR/dist/bin/openhinge.js"
+  BIN_TARGET="$INSTALL_DIR/bin/openhinge-wrapper.sh"
   if [ -f "$BIN_TARGET" ]; then
     sudo ln -sf "$BIN_TARGET" /usr/local/bin/openhinge 2>/dev/null || \
     ln -sf "$BIN_TARGET" "$HOME/.local/bin/openhinge" 2>/dev/null && \

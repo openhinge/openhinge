@@ -7,7 +7,7 @@
     "node": ">=18.0.0"
   },
   "bin": {
-    "openhinge": "./dist/bin/openhinge.js"
+    "openhinge": "./bin/openhinge-wrapper.sh"
   },
   "repository": {
     "type": "git",
