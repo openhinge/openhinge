@@ -2126,23 +2126,23 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
       : '';
 
     openModal(`Create ${formatLabels[format] || 'API'} Key`, `
-      <form onsubmit="OS.saveKey(event)" id="key-form">
-        <input type="hidden" name="api_format" value="${format}">
+      <div id="key-form">
+        <input type="hidden" name="api_format" value="${format}" id="key-format">
         <div class="form-group">
           <div style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-hover);font-size:12px;color:var(--text-secondary)">
             Endpoint: <code style="color:var(--text)">${formatEndpoints[format]}</code>
             ${format === 'anthropic' ? ' &middot; Auth: <code style="color:var(--text)">x-api-key</code> header' : ' &middot; Auth: <code style="color:var(--text)">Bearer</code> token'}
           </div>
         </div>
-        <div class="form-group"><label class="form-label">Name</label><input name="name" required placeholder="e.g. my-assistant"></div>
+        <div class="form-group"><label class="form-label">Name</label><input name="name" id="key-name" required placeholder="e.g. my-assistant"></div>
         ${routingHint}
         ${soulCheckboxes}
         <div class="form-group">
           <label class="form-label">Rate Limit (per min)</label>
-          <input name="rpm" type="number" value="60">
+          <input name="rpm" id="key-rpm" type="number" value="60">
         </div>
-        <button type="submit" class="btn btn-primary" style="width:100%;margin-top:8px">Generate Key</button>
-      </form>
+        <button type="button" class="btn btn-primary" style="width:100%;margin-top:8px" onclick="OS.saveKey()">Generate Key</button>
+      </div>
     `);
 
     // Hide soul list initially since "All" is checked
@@ -2245,46 +2245,35 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
     }
   }
 
-  async function saveKey(e) {
-    e.preventDefault();
+  async function saveKey() {
     try {
-    const f = new FormData(e.target);
-    const allSouls = document.getElementById('key-all-souls')?.checked ?? true;
-    const soulIds = allSouls ? [] : Array.from(document.querySelectorAll('.soul-checkbox:checked')).map(cb => cb.value);
-    const format = f.get('api_format') || 'openai';
+      const name = document.getElementById('key-name')?.value?.trim();
+      if (!name) { toast('Enter a name', 'error'); return; }
+      const format = document.getElementById('key-format')?.value || 'openai';
+      const rpm = parseInt(document.getElementById('key-rpm')?.value) || 60;
+      const allSouls = document.getElementById('key-all-souls')?.checked ?? true;
+      const soulIds = allSouls ? [] : Array.from(document.querySelectorAll('.soul-checkbox:checked')).map(cb => cb.value);
 
-    const { data } = await api('/admin/keys', { method: 'POST', body: {
-      name: f.get('name'),
-      api_format: format,
-      soul_ids: soulIds.length > 0 ? soulIds : undefined,
-      rate_limit_rpm: parseInt(f.get('rpm')) || 60,
-    }});
-    if (data?.key) {
-      const host = window.location.hostname || 'localhost';
-      const port = window.location.port || '3700';
-      const baseUrl = `http://${host}:${port}`;
+      const { data } = await api('/admin/keys', { method: 'POST', body: {
+        name,
+        api_format: format,
+        soul_ids: soulIds.length > 0 ? soulIds : undefined,
+        rate_limit_rpm: rpm,
+      }});
 
-      // Store snippet text for copy buttons — avoid inline onclick escaping issues
-      window._ohKeySnippet = '';
-      if (format === 'anthropic') {
-        window._ohKeySnippet = `import Anthropic from "@anthropic-ai/sdk";\n\nconst client = new Anthropic({\n  apiKey: "${data.key}",\n  baseURL: "${baseUrl}",\n});\n\nconst message = await client.messages.create({\n  model: "claude-sonnet-4-6",\n  max_tokens: 1024,\n  messages: [{ role: "user", content: "Hello!" }],\n});`;
-      } else {
-        window._ohKeySnippet = `import OpenAI from "openai";\n\nconst client = new OpenAI({\n  apiKey: "${data.key}",\n  baseURL: "${baseUrl}/v1",\n});\n\nconst response = await client.chat.completions.create({\n  model: "claude-sonnet-4-6",\n  messages: [{ role: "user", content: "Hello!" }],\n});`;
-      }
+      if (!data?.key) { toast('Failed to create key', 'error'); return; }
 
-      const sdkLabel = format === 'anthropic' ? 'Anthropic' : 'OpenAI';
+      // Store for copy button
+      window._ohCreatedKey = data.key;
 
       closeModal();
       openModal('Key Created', `
         <p style="margin-bottom:12px;font-size:13px;color:var(--text-secondary)">Save this key now. It will not be shown again.</p>
-        <div class="code-block" style="word-break:break-all">${data.key}</div>
-        <button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="navigator.clipboard.writeText('${data.key}');OS.toast('Copied!','success')">Copy Key</button>
-        <p style="margin:12px 0 8px;font-size:13px;font-weight:600">Usage with ${sdkLabel} SDK:</p>
-        <div class="code-block" style="font-size:11px;max-height:240px;overflow:auto;white-space:pre">${h(window._ohKeySnippet)}</div>
-        <button class="btn btn-secondary" style="width:100%;margin-top:8px" onclick="navigator.clipboard.writeText(window._ohKeySnippet);OS.toast('Snippet copied!','success')">Copy Snippet</button>
+        <div class="code-block" style="word-break:break-all">${h(data.key)}</div>
+        <button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="navigator.clipboard.writeText(window._ohCreatedKey);OS.toast('Copied!','success')">Copy Key</button>
       `);
-    }
-    loaders.keys();
+
+      loaders.keys();
     } catch (err) { console.error('saveKey error:', err); toast('Error: ' + err.message, 'error'); }
   }
 
