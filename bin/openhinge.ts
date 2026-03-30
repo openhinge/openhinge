@@ -12,7 +12,17 @@ import * as souls from '../src/souls/repository.js';
 import * as keys from '../src/keys/repository.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const pkg = JSON.parse(readFileSync(resolve(__dirname, '../package.json'), 'utf-8'));
+// Walk up from bin/ or dist/bin/ to find the root package.json
+function findPackageJson(start: string): string {
+  let dir = start;
+  for (let i = 0; i < 5; i++) {
+    const candidate = resolve(dir, 'package.json');
+    try { readFileSync(candidate, 'utf-8'); return candidate; } catch {}
+    dir = resolve(dir, '..');
+  }
+  return resolve(start, '../package.json'); // fallback
+}
+const pkg = JSON.parse(readFileSync(findPackageJson(__dirname), 'utf-8'));
 
 const program = new Command();
 

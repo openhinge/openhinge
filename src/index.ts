@@ -8,7 +8,16 @@ import { logger } from './utils/logger.js';
 
 // Set version from package.json once at startup
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const pkg = JSON.parse(readFileSync(resolve(__dirname, '../../package.json'), 'utf-8'));
+function findPkg(start: string): string {
+  let dir = start;
+  for (let i = 0; i < 5; i++) {
+    const p = resolve(dir, 'package.json');
+    try { readFileSync(p, 'utf-8'); return p; } catch {}
+    dir = resolve(dir, '..');
+  }
+  return resolve(start, '../../package.json');
+}
+const pkg = JSON.parse(readFileSync(findPkg(__dirname), 'utf-8'));
 process.env.OPENHINGE_VERSION = pkg.version;
 
 async function main() {
