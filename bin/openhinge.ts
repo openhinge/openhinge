@@ -396,26 +396,47 @@ providerCmd.command('add-claude')
   .option('-p, --priority <n>', 'Priority (higher = preferred)', '10')
   .action(async (opts) => {
     const { execSync } = await import('node:child_process');
-
-    // Read Claude Code credentials from macOS Keychain
-    let raw: string;
-    try {
-      raw = execSync('security find-generic-password -s "Claude Code-credentials" -w', {
-        encoding: 'utf-8',
-        stdio: ['pipe', 'pipe', 'pipe'],
-      }).trim();
-    } catch {
-      console.error('No Claude Code credentials found on this computer.');
-      console.error('Make sure Claude Code is installed and you are logged in (/login).');
-      process.exit(1);
-    }
+    const { readFileSync, existsSync } = await import('node:fs');
+    const { resolve } = await import('node:path');
+    const { homedir, platform } = await import('node:os');
 
     let creds: any;
-    try {
-      creds = JSON.parse(raw);
-    } catch {
-      console.error('Failed to parse Claude Code credentials.');
-      process.exit(1);
+
+    if (platform() === 'darwin') {
+      // macOS: Read from Keychain
+      let raw: string;
+      try {
+        raw = execSync('security find-generic-password -s "Claude Code-credentials" -w', {
+          encoding: 'utf-8',
+          stdio: ['pipe', 'pipe', 'pipe'],
+        }).trim();
+      } catch {
+        // Fallback to file on macOS too
+        const filePath = resolve(process.env.CLAUDE_CONFIG_DIR || resolve(homedir(), '.claude'), '.credentials.json');
+        if (existsSync(filePath)) {
+          raw = readFileSync(filePath, 'utf-8');
+        } else {
+          console.error('No Claude Code credentials found on this computer.');
+          console.error('Make sure Claude Code is installed and you are logged in (/login).');
+          process.exit(1);
+        }
+      }
+      try { creds = JSON.parse(raw!); } catch {
+        console.error('Failed to parse Claude Code credentials.');
+        process.exit(1);
+      }
+    } else {
+      // Linux: Read from ~/.claude/.credentials.json
+      const filePath = resolve(process.env.CLAUDE_CONFIG_DIR || resolve(homedir(), '.claude'), '.credentials.json');
+      if (!existsSync(filePath)) {
+        console.error(`No Claude Code credentials found at ${filePath}`);
+        console.error('Make sure Claude Code is installed and you are logged in (/login).');
+        process.exit(1);
+      }
+      try { creds = JSON.parse(readFileSync(filePath, 'utf-8')); } catch {
+        console.error('Failed to parse Claude Code credentials.');
+        process.exit(1);
+      }
     }
 
     const oauth = creds.claudeAiOauth;
@@ -460,19 +481,32 @@ providerCmd.command('refresh-claude')
   .option('--id <id>', 'Provider ID to refresh (refreshes all Claude providers if omitted)')
   .action(async (opts) => {
     const { execSync } = await import('node:child_process');
+    const { readFileSync, existsSync } = await import('node:fs');
+    const { resolve } = await import('node:path');
+    const { homedir, platform } = await import('node:os');
 
-    let raw: string;
-    try {
-      raw = execSync('security find-generic-password -s "Claude Code-credentials" -w', {
-        encoding: 'utf-8',
-        stdio: ['pipe', 'pipe', 'pipe'],
-      }).trim();
-    } catch {
-      console.error('No Claude Code credentials found on this computer.');
-      process.exit(1);
+    let raw: string | undefined;
+
+    if (platform() === 'darwin') {
+      try {
+        raw = execSync('security find-generic-password -s "Claude Code-credentials" -w', {
+          encoding: 'utf-8',
+          stdio: ['pipe', 'pipe', 'pipe'],
+        }).trim();
+      } catch { /* try file fallback */ }
     }
 
-    const oauth = JSON.parse(raw).claudeAiOauth;
+    if (!raw) {
+      const filePath = resolve(process.env.CLAUDE_CONFIG_DIR || resolve(homedir(), '.claude'), '.credentials.json');
+      if (existsSync(filePath)) {
+        raw = readFileSync(filePath, 'utf-8');
+      } else {
+        console.error('No Claude Code credentials found on this computer.');
+        process.exit(1);
+      }
+    }
+
+    const oauth = JSON.parse(raw!).claudeAiOauth;
     if (!oauth?.accessToken) {
       console.error('No OAuth token found.');
       process.exit(1);

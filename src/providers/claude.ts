@@ -47,28 +47,49 @@ export class ClaudeProvider extends BaseProvider {
   // Try reading fresh token from macOS Keychain first (like OpenClaw),
   // then fall back to OAuth refresh_token flow
   async refreshToken(): Promise<boolean> {
-    // Strategy 1: Read from macOS Keychain — Claude Code keeps this fresh
-    // Only use keychain if this provider was originally imported from keychain
-    // (has client_id matching Claude Code's) to avoid cross-account contamination
+    // Strategy 1: Read fresh token from Claude Code's local credential store
+    // macOS: Keychain, Linux: ~/.claude/.credentials.json
     if (this.isSubscription && this.config.credentials.client_id === '9d1c250a-e61b-44d9-88ed-5944d1962f5e') {
       try {
-        const { execSync } = await import('node:child_process');
-        const raw = execSync(
-          'security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null',
-          { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] },
-        ).trim();
-        const creds = JSON.parse(raw);
-        const oauth = creds.claudeAiOauth;
-        if (oauth?.accessToken && oauth.accessToken !== this.config.credentials.oauth_token) {
-          this.config.credentials.oauth_token = oauth.accessToken;
-          if (oauth.refreshToken) this.config.credentials.refresh_token = oauth.refreshToken;
-          if (oauth.expiresAt) this.config.credentials.expires_at = String(oauth.expiresAt);
-          this.persistCredentials();
-          logger.info({ id: this.id }, 'Claude token refreshed from macOS Keychain');
-          return true;
+        let raw: string | undefined;
+        const { platform } = await import('node:os');
+
+        if (platform() === 'darwin') {
+          // macOS Keychain
+          const { execSync } = await import('node:child_process');
+          try {
+            raw = execSync(
+              'security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null',
+              { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] },
+            ).trim();
+          } catch { /* Keychain not available */ }
+        }
+
+        if (!raw) {
+          // Linux file or macOS fallback: ~/.claude/.credentials.json
+          const { readFileSync, existsSync } = await import('node:fs');
+          const { resolve } = await import('node:path');
+          const { homedir } = await import('node:os');
+          const filePath = resolve(process.env.CLAUDE_CONFIG_DIR || resolve(homedir(), '.claude'), '.credentials.json');
+          if (existsSync(filePath)) {
+            raw = readFileSync(filePath, 'utf-8');
+          }
+        }
+
+        if (raw) {
+          const creds = JSON.parse(raw);
+          const oauth = creds.claudeAiOauth;
+          if (oauth?.accessToken && oauth.accessToken !== this.config.credentials.oauth_token) {
+            this.config.credentials.oauth_token = oauth.accessToken;
+            if (oauth.refreshToken) this.config.credentials.refresh_token = oauth.refreshToken;
+            if (oauth.expiresAt) this.config.credentials.expires_at = String(oauth.expiresAt);
+            this.persistCredentials();
+            logger.info({ id: this.id }, 'Claude token refreshed from local credentials');
+            return true;
+          }
         }
       } catch {
-        // Not on macOS or Claude Code not installed — fall through to OAuth
+        // Claude Code not installed — fall through to OAuth
       }
     }
 
