@@ -15,13 +15,13 @@ program
   .description('OpenHinge AI Gateway CLI')
   .version('0.1.4');
 
-// Start command — start the gateway server
+// Start command — start the gateway server (background by default)
 program.command('start')
-  .description('Start the OpenHinge gateway server')
-  .option('-d, --daemon', 'Run in background')
+  .description('Start the OpenHinge gateway server (runs in background)')
+  .option('-f, --foreground', 'Run in foreground (blocks terminal)')
   .action(async (opts) => {
     const { resolve } = await import('node:path');
-    const { existsSync } = await import('node:fs');
+    const { existsSync, openSync, mkdirSync, writeFileSync } = await import('node:fs');
 
     let root = resolve(import.meta.dirname, '..');
     if (!existsSync(resolve(root, 'package.json'))) root = resolve(root, '..');
@@ -42,10 +42,21 @@ program.command('start')
       }
     } catch { /* not running */ }
 
-    if (opts.daemon) {
+    if (opts.foreground) {
       const { spawn } = await import('node:child_process');
-      const logFile = resolve(root, 'data/openhinge.log');
-      const { openSync } = await import('node:fs');
+      const server = spawn('node', [entry], {
+        cwd: root,
+        stdio: 'inherit',
+      });
+      server.on('exit', (code) => process.exit(code || 0));
+      process.on('SIGINT', () => server.kill('SIGINT'));
+      process.on('SIGTERM', () => server.kill('SIGTERM'));
+    } else {
+      const { spawn } = await import('node:child_process');
+      const dataDir = resolve(root, 'data');
+      mkdirSync(dataDir, { recursive: true });
+      const logFile = resolve(dataDir, 'openhinge.log');
+      const pidFile = resolve(dataDir, 'openhinge.pid');
       const out = openSync(logFile, 'a');
       const server = spawn('node', [entry], {
         cwd: root,
@@ -53,20 +64,11 @@ program.command('start')
         stdio: ['ignore', out, out],
       });
       server.unref();
-      console.log(`OpenHinge started in background (PID ${server.pid})`);
+      // Save PID for reliable stop
+      if (server.pid) writeFileSync(pidFile, String(server.pid));
+      console.log(`OpenHinge started (PID ${server.pid})`);
       console.log(`Dashboard: http://127.0.0.1:3700/dashboard/`);
       console.log(`Logs: ${logFile}`);
-    } else {
-      const { spawn } = await import('node:child_process');
-      const server = spawn('node', [entry], {
-        cwd: root,
-        stdio: 'inherit',
-      });
-      server.on('exit', (code) => process.exit(code || 0));
-
-      // Forward signals
-      process.on('SIGINT', () => server.kill('SIGINT'));
-      process.on('SIGTERM', () => server.kill('SIGTERM'));
     }
   });
 
@@ -75,6 +77,26 @@ program.command('stop')
   .description('Stop the OpenHinge gateway server')
   .action(async () => {
     const { execSync } = await import('node:child_process');
+    const { resolve } = await import('node:path');
+    const { readFileSync, unlinkSync, existsSync } = await import('node:fs');
+
+    let root = resolve(import.meta.dirname, '..');
+    if (!existsSync(resolve(root, 'package.json'))) root = resolve(root, '..');
+    const pidFile = resolve(root, 'data/openhinge.pid');
+
+    // Try PID file first
+    if (existsSync(pidFile)) {
+      const pid = parseInt(readFileSync(pidFile, 'utf-8').trim(), 10);
+      try {
+        process.kill(pid, 'SIGTERM');
+        try { unlinkSync(pidFile); } catch {}
+        console.log('OpenHinge stopped.');
+        return;
+      } catch { /* stale PID file */ }
+      try { unlinkSync(pidFile); } catch {}
+    }
+
+    // Fallback: find by port
     try {
       const pids = execSync('lsof -ti:3700', { encoding: 'utf-8' }).trim();
       if (!pids) {
@@ -82,7 +104,7 @@ program.command('stop')
         return;
       }
       for (const pid of pids.split('\n')) {
-        try { process.kill(parseInt(pid), 'SIGTERM'); } catch { /* already dead */ }
+        try { process.kill(parseInt(pid), 'SIGTERM'); } catch {}
       }
       console.log('OpenHinge stopped.');
     } catch {
@@ -96,27 +118,36 @@ program.command('restart')
   .action(async () => {
     const { execSync } = await import('node:child_process');
     const { resolve } = await import('node:path');
-    const { existsSync, openSync } = await import('node:fs');
+    const { existsSync, openSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } = await import('node:fs');
     const { spawn } = await import('node:child_process');
 
     let root = resolve(import.meta.dirname, '..');
     if (!existsSync(resolve(root, 'package.json'))) root = resolve(root, '..');
     const entry = resolve(root, 'dist/src/index.js');
+    const dataDir = resolve(root, 'data');
+    const pidFile = resolve(dataDir, 'openhinge.pid');
 
-    // Stop
+    // Stop — try PID file first
+    if (existsSync(pidFile)) {
+      const pid = parseInt(readFileSync(pidFile, 'utf-8').trim(), 10);
+      try { process.kill(pid, 'SIGTERM'); } catch {}
+      try { unlinkSync(pidFile); } catch {}
+      await new Promise(r => setTimeout(r, 1000));
+    }
+    // Also kill by port as fallback
     try {
       const pids = execSync('lsof -ti:3700', { encoding: 'utf-8' }).trim();
       if (pids) {
         for (const pid of pids.split('\n')) {
-          try { process.kill(parseInt(pid), 'SIGTERM'); } catch { /* */ }
+          try { process.kill(parseInt(pid), 'SIGTERM'); } catch {}
         }
-        console.log('Stopped existing server.');
         await new Promise(r => setTimeout(r, 1000));
       }
     } catch { /* wasn't running */ }
 
     // Start in background
-    const logFile = resolve(root, 'data/openhinge.log');
+    mkdirSync(dataDir, { recursive: true });
+    const logFile = resolve(dataDir, 'openhinge.log');
     const out = openSync(logFile, 'a');
     const server = spawn('node', [entry], {
       cwd: root,
@@ -124,8 +155,136 @@ program.command('restart')
       stdio: ['ignore', out, out],
     });
     server.unref();
+    if (server.pid) writeFileSync(pidFile, String(server.pid));
     console.log(`OpenHinge restarted (PID ${server.pid})`);
     console.log(`Dashboard: http://127.0.0.1:3700/dashboard/`);
+  });
+
+// Startup command — enable/disable launch on boot
+program.command('startup')
+  .description('Enable or disable OpenHinge launch on system boot')
+  .option('--disable', 'Remove startup configuration')
+  .action(async (opts) => {
+    const { resolve } = await import('node:path');
+    const { existsSync, writeFileSync, unlinkSync, mkdirSync } = await import('node:fs');
+    const { execSync } = await import('node:child_process');
+    const { platform, homedir } = await import('node:os');
+
+    let root = resolve(import.meta.dirname, '..');
+    if (!existsSync(resolve(root, 'package.json'))) root = resolve(root, '..');
+    const entry = resolve(root, 'dist/src/index.js');
+    const nodePath = execSync('which node', { encoding: 'utf-8' }).trim();
+
+    if (platform() === 'darwin') {
+      // macOS: launchd plist
+      const plistDir = resolve(homedir(), 'Library/LaunchAgents');
+      const plistPath = resolve(plistDir, 'com.openhinge.gateway.plist');
+
+      if (opts.disable) {
+        try { execSync(`launchctl unload ${plistPath}`, { stdio: 'pipe' }); } catch {}
+        try { unlinkSync(plistPath); } catch {}
+        console.log('OpenHinge startup disabled.');
+        return;
+      }
+
+      mkdirSync(plistDir, { recursive: true });
+      const logFile = resolve(root, 'data/openhinge.log');
+      const plist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.openhinge.gateway</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${nodePath}</string>
+    <string>${entry}</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>${root}</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>${logFile}</string>
+  <key>StandardErrorPath</key>
+  <string>${logFile}</string>
+</dict>
+</plist>`;
+
+      writeFileSync(plistPath, plist);
+      execSync(`launchctl load ${plistPath}`, { stdio: 'inherit' });
+      console.log('OpenHinge will start on boot (macOS launchd).');
+      console.log(`Plist: ${plistPath}`);
+    } else {
+      // Linux: systemd user service
+      const serviceDir = resolve(homedir(), '.config/systemd/user');
+      const servicePath = resolve(serviceDir, 'openhinge.service');
+
+      if (opts.disable) {
+        try { execSync('systemctl --user disable openhinge', { stdio: 'pipe' }); } catch {}
+        try { execSync('systemctl --user stop openhinge', { stdio: 'pipe' }); } catch {}
+        try { unlinkSync(servicePath); } catch {}
+        try { execSync('systemctl --user daemon-reload', { stdio: 'pipe' }); } catch {}
+        console.log('OpenHinge startup disabled.');
+        return;
+      }
+
+      mkdirSync(serviceDir, { recursive: true });
+      const service = `[Unit]
+Description=OpenHinge AI Gateway
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=${root}
+ExecStart=${nodePath} ${entry}
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+`;
+
+      writeFileSync(servicePath, service);
+      execSync('systemctl --user daemon-reload', { stdio: 'inherit' });
+      execSync('systemctl --user enable openhinge', { stdio: 'inherit' });
+      execSync('systemctl --user start openhinge', { stdio: 'inherit' });
+      // Enable lingering so user services run without login
+      try { execSync(`loginctl enable-linger ${process.env.USER}`, { stdio: 'pipe' }); } catch {}
+      console.log('OpenHinge will start on boot (systemd user service).');
+      console.log(`Service: ${servicePath}`);
+    }
+
+    console.log('Logs: openhinge logs');
+  });
+
+// Logs command — view server logs
+program.command('logs')
+  .description('View OpenHinge server logs')
+  .option('-f, --follow', 'Follow log output')
+  .option('-n, --lines <n>', 'Number of lines to show', '50')
+  .action(async (opts) => {
+    const { resolve } = await import('node:path');
+    const { existsSync } = await import('node:fs');
+    const { execSync, spawn: nodeSpawn } = await import('node:child_process');
+
+    let root = resolve(import.meta.dirname, '..');
+    if (!existsSync(resolve(root, 'package.json'))) root = resolve(root, '..');
+    const logFile = resolve(root, 'data/openhinge.log');
+
+    if (!existsSync(logFile)) {
+      console.log('No logs yet. Start the server first: openhinge start');
+      return;
+    }
+
+    if (opts.follow) {
+      const tail = nodeSpawn('tail', ['-f', '-n', opts.lines, logFile], { stdio: 'inherit' });
+      process.on('SIGINT', () => { tail.kill(); process.exit(0); });
+    } else {
+      execSync(`tail -n ${opts.lines} ${logFile}`, { stdio: 'inherit' });
+    }
   });
 
 // Init command — generates config and runs migrations
