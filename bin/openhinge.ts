@@ -467,7 +467,41 @@ program.command('update')
       const behind = execSync('git rev-list HEAD..origin/main --count', { cwd: root, encoding: 'utf-8' }).trim();
 
       if (behind === '0') {
-        console.log('Already up to date.');
+        // Check if dist/ is stale (source files newer than dist)
+        const { statSync } = await import('node:fs');
+        let needsRebuild = false;
+        try {
+          const distTime = statSync(resolve(root, 'dist/src/index.js')).mtimeMs;
+          const srcTime = statSync(resolve(root, 'src/index.ts')).mtimeMs;
+          const dashTime = statSync(resolve(root, 'dashboard/app.js')).mtimeMs;
+          needsRebuild = srcTime > distTime || dashTime > distTime;
+        } catch { needsRebuild = true; }
+
+        if (!needsRebuild) {
+          console.log('Already up to date.');
+          return;
+        }
+        console.log('Source files changed. Rebuilding...');
+        execSync('npm run build', { cwd: root, stdio: 'inherit' });
+        console.log('Rebuild complete.');
+
+        // Auto-restart if running
+        try {
+          const pids = execSync('lsof -ti:3700', { encoding: 'utf-8' }).trim();
+          if (pids) {
+            console.log('Restarting server...');
+            for (const pid of pids.split('\n')) {
+              try { process.kill(parseInt(pid)); } catch {}
+            }
+            await new Promise(r => setTimeout(r, 1000));
+            const { spawn } = await import('node:child_process');
+            const server = spawn('node', [resolve(root, 'dist/src/index.js')], {
+              cwd: root, detached: true, stdio: 'ignore',
+            });
+            server.unref();
+            console.log('Server restarted.');
+          }
+        } catch {}
         return;
       }
 
