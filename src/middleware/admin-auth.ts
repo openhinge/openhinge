@@ -1,5 +1,6 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { AuthError } from '../utils/errors.js';
+import { validateSession } from '../auth/sessions.js';
 
 export function adminAuthMiddleware(getAuth: () => { passwordHash?: string }) {
   return async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
@@ -12,6 +13,7 @@ export function adminAuthMiddleware(getAuth: () => { passwordHash?: string }) {
 
     const { passwordHash } = getAuth();
     if (!passwordHash) throw new AuthError('No password set — open the dashboard to set one');
-    if (token !== passwordHash) throw new AuthError('Invalid credentials');
+
+    if (!validateSession(token)) throw new AuthError('Invalid or expired session');
   };
 }

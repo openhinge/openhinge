@@ -60,7 +60,7 @@ const OS = (() => {
     const errEl = document.getElementById('welcome-error');
 
     if (!pw) { errEl.textContent = _isSetup ? 'Choose a password' : 'Enter your password'; errEl.classList.remove('hidden'); return; }
-    if (_isSetup && pw.length < 4) { errEl.textContent = 'Password must be at least 4 characters'; errEl.classList.remove('hidden'); return; }
+    if (_isSetup && pw.length < 8) { errEl.textContent = 'Password must be at least 8 characters'; errEl.classList.remove('hidden'); return; }
 
     const endpoint = _isSetup ? '/admin/auth/setup' : '/admin/auth/login';
     try {
@@ -1357,7 +1357,7 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
               <dl class="doc-dl">
                 <dt>OPENHINGE_PORT</dt><dd>Server port (default: 3700)</dd>
                 <dt>OPENHINGE_HOST</dt><dd>Bind address (default: 127.0.0.1)</dd>
-                <dt>OPENHINGE_PASSWORD_HASH</dt><dd>SHA-256 password hash for dashboard auth</dd>
+                <dt>OPENHINGE_PASSWORD_HASH</dt><dd>Password hash for dashboard auth (scrypt)</dd>
                 <dt>OPENHINGE_ENCRYPTION_KEY</dt><dd>32+ char key for encrypting provider credentials</dd>
                 <dt>OPENHINGE_DB_PATH</dt><dd>SQLite database path (default: ./data/openhinge.db)</dd>
                 <dt>OPENHINGE_LOG_LEVEL</dt><dd>Log level: trace, debug, info, warn, error</dd>
