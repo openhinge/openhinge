@@ -421,28 +421,44 @@ providerCmd.command('add-claude')
         searchPaths.push(resolve(process.env.CLAUDE_CONFIG_DIR, '.credentials.json'));
       }
 
-      // Current user's home
+      // Current user's home (works on all platforms)
       searchPaths.push(resolve(homedir(), '.claude', '.credentials.json'));
 
-      // Root's home (if running as root, check regular users too)
-      if (process.getuid?.() === 0) {
-        searchPaths.push('/root/.claude/.credentials.json');
-        // Scan /home/* for any user that has Claude Code credentials
+      if (platform() === 'win32') {
+        // Windows: check %APPDATA% and %LOCALAPPDATA%
+        const appData = process.env.APPDATA;
+        const localAppData = process.env.LOCALAPPDATA;
+        if (appData) searchPaths.push(resolve(appData, 'claude', '.credentials.json'));
+        if (localAppData) searchPaths.push(resolve(localAppData, 'claude', '.credentials.json'));
+        // WSL interop — check Windows user's home from WSL
         try {
-          const homeUsers = readdirSync('/home');
-          for (const user of homeUsers) {
+          const winHome = execSync('wslpath "$(cmd.exe /C echo %USERPROFILE%)" 2>/dev/null', { encoding: 'utf-8' }).trim();
+          if (winHome) searchPaths.push(resolve(winHome, '.claude', '.credentials.json'));
+        } catch { /* not in WSL */ }
+        // Scan C:\Users\*
+        try {
+          const usersDir = resolve(process.env.SystemDrive || 'C:', 'Users');
+          for (const user of readdirSync(usersDir)) {
+            if (user === 'Public' || user === 'Default' || user === 'Default User') continue;
+            searchPaths.push(resolve(usersDir, user, '.claude', '.credentials.json'));
+          }
+        } catch { /* can't read Users dir */ }
+      } else {
+        // Unix: check root and all /home/* users
+        if (process.getuid?.() === 0) {
+          searchPaths.push('/root/.claude/.credentials.json');
+        } else {
+          searchPaths.push('/root/.claude/.credentials.json');
+        }
+        try {
+          for (const user of readdirSync('/home')) {
             searchPaths.push(resolve('/home', user, '.claude', '.credentials.json'));
           }
         } catch { /* /home not readable */ }
-      } else {
-        // Not root — also check /root in case they logged in as root before
-        searchPaths.push('/root/.claude/.credentials.json');
       }
 
-      // Deduplicate
-      const uniquePaths = [...new Set(searchPaths)];
-
-      for (const p of uniquePaths) {
+      // Deduplicate and search
+      for (const p of [...new Set(searchPaths)]) {
         if (existsSync(p)) {
           try {
             raw = readFileSync(p, 'utf-8');
@@ -455,16 +471,15 @@ providerCmd.command('add-claude')
 
     if (!raw) {
       console.error('No Claude Code credentials found on this computer.');
-      console.error('Searched:');
-      console.error('  - macOS Keychain (if macOS)');
-      console.error(`  - ${resolve(homedir(), '.claude', '.credentials.json')}`);
-      if (process.getuid?.() === 0) {
-        console.error('  - /home/*/.claude/.credentials.json');
-      } else {
-        console.error('  - /root/.claude/.credentials.json');
-      }
       console.error('');
-      console.error('Make sure Claude Code is installed and logged in:');
+      console.error('This command imports credentials from a local Claude Code installation.');
+      console.error('If Claude Code is not installed here, use an API key instead:');
+      console.error('');
+      console.error('  openhinge provider add -n "Claude" -t claude -k YOUR_API_KEY -m claude-sonnet-4-6');
+      console.error('');
+      console.error('Get an API key at: https://console.anthropic.com/settings/keys');
+      console.error('');
+      console.error('Or install Claude Code first:');
       console.error('  npm install -g @anthropic-ai/claude-code');
       console.error('  claude   # then run /login');
       process.exit(1);
