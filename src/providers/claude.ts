@@ -44,8 +44,35 @@ export class ClaudeProvider extends BaseProvider {
     return 'claude-sonnet-4-6';
   }
 
-  // OAuth refresh using refresh_token — works on any platform
+  // Try reading fresh token from macOS Keychain first (like OpenClaw),
+  // then fall back to OAuth refresh_token flow
   async refreshToken(): Promise<boolean> {
+    // Strategy 1: Read from macOS Keychain — Claude Code keeps this fresh
+    // Only use keychain if this provider was originally imported from keychain
+    // (has client_id matching Claude Code's) to avoid cross-account contamination
+    if (this.isSubscription && this.config.credentials.client_id === '9d1c250a-e61b-44d9-88ed-5944d1962f5e') {
+      try {
+        const { execSync } = await import('node:child_process');
+        const raw = execSync(
+          'security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null',
+          { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] },
+        ).trim();
+        const creds = JSON.parse(raw);
+        const oauth = creds.claudeAiOauth;
+        if (oauth?.accessToken && oauth.accessToken !== this.config.credentials.oauth_token) {
+          this.config.credentials.oauth_token = oauth.accessToken;
+          if (oauth.refreshToken) this.config.credentials.refresh_token = oauth.refreshToken;
+          if (oauth.expiresAt) this.config.credentials.expires_at = String(oauth.expiresAt);
+          this.persistCredentials();
+          logger.info({ id: this.id }, 'Claude token refreshed from macOS Keychain');
+          return true;
+        }
+      } catch {
+        // Not on macOS or Claude Code not installed — fall through to OAuth
+      }
+    }
+
+    // Strategy 2: OAuth refresh_token flow — works on any platform
     const refreshToken = this.config.credentials.refresh_token;
     const clientId = this.config.credentials.client_id;
     if (!refreshToken || !clientId) {
