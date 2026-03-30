@@ -764,15 +764,22 @@ keyCmd.command('create')
   .requiredOption('-n, --name <name>', 'Key name')
   .option('-s, --soul <id>', 'Bind to soul ID')
   .option('-r, --rpm <n>', 'Rate limit per minute', '60')
+  .option('-f, --format <format>', 'API format: openai, anthropic, openclaw', 'openai')
   .action((opts) => {
+    const validFormats = ['openai', 'anthropic', 'openclaw'];
+    if (!validFormats.includes(opts.format)) {
+      console.error(`Invalid format: ${opts.format}. Must be one of: ${validFormats.join(', ')}`);
+      process.exit(1);
+    }
     const config = loadConfig();
     initDatabase(config.db.path);
     const key = keys.createKey({
       name: opts.name,
       soul_id: opts.soul,
       rate_limit_rpm: parseInt(opts.rpm, 10),
+      api_format: opts.format,
     });
-    console.log(`API key created: ${key.name}`);
+    console.log(`API key created: ${key.name} (${opts.format} format)`);
     console.log(`Key: ${key.key}`);
     console.log('Save this key — it will not be shown again.');
     closeDatabase();
