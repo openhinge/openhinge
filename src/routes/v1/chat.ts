@@ -44,6 +44,17 @@ function validateBasicSchema(data: unknown, schema: JsonSchema): boolean {
   return true;
 }
 
+/** Normalize provider-specific finish reasons to OpenAI format */
+function toOpenAIFinishReason(reason: string | null): string | null {
+  if (!reason) return null;
+  const r = reason.toLowerCase();
+  if (r === 'stop' || r === 'end_turn' || r === 'end') return 'stop';
+  if (r === 'length' || r === 'max_tokens') return 'length';
+  if (r.includes('stop')) return 'stop';
+  if (r === 'content_filter') return 'content_filter';
+  return 'stop';
+}
+
 interface ChatBody {
   model?: string;
   messages: ChatMessage[];
@@ -160,7 +171,7 @@ async function handleChat(request: FastifyRequest<{ Params?: { slug?: string }; 
           choices: [{
             index: 0,
             delta: chunk.delta ? { content: chunk.delta } : {},
-            finish_reason: chunk.finish_reason,
+            finish_reason: toOpenAIFinishReason(chunk.finish_reason),
           }],
         };
 
@@ -232,7 +243,7 @@ async function handleChat(request: FastifyRequest<{ Params?: { slug?: string }; 
       choices: [{
         index: 0,
         message: { role: 'assistant', content: response.content },
-        finish_reason: response.finish_reason,
+        finish_reason: toOpenAIFinishReason(response.finish_reason),
       }],
       usage: {
         prompt_tokens: response.input_tokens,
