@@ -1781,6 +1781,23 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
     if (!p) return;
     const config = typeof p.config === 'string' ? JSON.parse(p.config) : (p.config || {});
 
+    const modelLists = {
+      claude: ['claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001'],
+      openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4.1', 'gpt-4.1-mini', 'gpt-5.4-mini', 'gpt-5.4', 'gpt-5.3-codex', 'gpt-5.2-codex', 'gpt-5.2', 'gpt-5.1-codex', 'gpt-5.1', 'gpt-5-codex', 'gpt-5'],
+      gemini: ['gemini-2.5-pro', 'gemini-2.5-flash'],
+      ollama: [],
+    };
+
+    const models = modelLists[p.type] || [];
+    const currentModel = config.default_model || '';
+    const modelField = models.length > 0
+      ? `<select name="model" class="input-mono">
+          <option value="">— Use provider default —</option>
+          ${models.map(m => `<option value="${h(m)}"${m === currentModel ? ' selected' : ''}>${h(m)}</option>`).join('')}
+          ${currentModel && !models.includes(currentModel) ? `<option value="${h(currentModel)}" selected>${h(currentModel)} (custom)</option>` : ''}
+        </select>`
+      : `<input name="model" value="${h(currentModel)}" placeholder="e.g. qwen3:1.7b" class="input-mono">`;
+
     openModal('Edit Provider', `
       <form onsubmit="OS.updateProvider(event, '${id}')">
         <div class="form-group"><label class="form-label">Name</label><input name="name" value="${h(p.name)}" required></div>
@@ -1796,7 +1813,7 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
         </div>
         <div class="form-group">
           <label class="form-label">Default Model</label>
-          <input name="model" value="${h(config.default_model || '')}" placeholder="e.g. claude-sonnet-4-6-20250514" class="input-mono">
+          ${modelField}
         </div>
         <div class="form-group">
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
