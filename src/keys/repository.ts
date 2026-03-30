@@ -7,6 +7,7 @@ function rowToKey(row: any): ApiKey {
   const soulRows = db.prepare('SELECT soul_id FROM api_key_souls WHERE api_key_id = ?').all(row.id) as any[];
   return {
     ...row,
+    api_format: row.api_format || 'openai',
     is_enabled: Boolean(row.is_enabled),
     soul_ids: soulRows.map((r: any) => r.soul_id),
   };
@@ -28,10 +29,11 @@ export function createKey(input: CreateKeyInput): ApiKeyWithSecret {
   const db = getDb();
 
   db.prepare(`
-    INSERT INTO api_keys (id, name, key_hash, key_prefix, soul_id, rate_limit_rpm, daily_budget_cents, monthly_budget_cents, expires_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO api_keys (id, name, key_hash, key_prefix, api_format, soul_id, rate_limit_rpm, daily_budget_cents, monthly_budget_cents, expires_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id, input.name, keyHash, prefix,
+    input.api_format || 'openai',
     null, // soul_id kept null — we use the junction table now
     input.rate_limit_rpm ?? 60,
     input.daily_budget_cents ?? null,

@@ -477,6 +477,12 @@ const OS = (() => {
       return '<span class="badge badge-success">All souls</span>';
     };
 
+    const formatBadge = (f) => {
+      if (f === 'anthropic') return '<span class="badge" style="background:rgba(217,119,87,0.15);color:#d97757">Anthropic</span>';
+      if (f === 'openclaw') return '<span class="badge" style="background:rgba(139,92,246,0.15);color:#8b5cf6">OpenClaw</span>';
+      return '<span class="badge" style="background:rgba(16,185,129,0.15);color:#10b981">OpenAI</span>';
+    };
+
     el.innerHTML = `
       <div class="section-header">
         <div><h2>API Keys</h2><p>Manage access tokens for consumers</p></div>
@@ -486,13 +492,14 @@ const OS = (() => {
         </button>
       </div>
       ${data?.length ? `<div class="table-wrapper"><table>
-        <thead><tr><th>Name</th><th>Prefix</th><th>Souls</th><th>Rate Limit</th><th>Requests</th><th>Last Used</th><th></th></tr></thead>
+        <thead><tr><th>Name</th><th>Prefix</th><th>Format</th><th>Souls</th><th>Rate Limit</th><th>Requests</th><th>Last Used</th><th></th></tr></thead>
         <tbody>${data.map(k => `<tr${k.is_enabled ? '' : ' style="opacity:0.5"'}>
           <td style="color:var(--text);font-weight:500">
             ${h(k.name)}
             ${k.is_enabled ? '' : ' <span class="badge badge-danger" style="margin-left:6px">Revoked</span>'}
           </td>
           <td><code>${h(k.key_prefix)}...</code></td>
+          <td>${formatBadge(k.api_format)}</td>
           <td>${soulBadges(k)}</td>
           <td class="text-mono">${k.rate_limit_rpm}/min</td>
           <td class="text-mono">${num(k.total_requests)}</td>
@@ -2028,11 +2035,18 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
   async function createKeyModal() {
     openModal('Create Key', `
       <div class="option-list">
-        <button class="option-card option-primary" onclick="OS.createApiKeyForm()">
+        <button class="option-card option-primary" onclick="OS.createApiKeyForm('openai')">
           <div class="option-card-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg></div>
           <div class="option-card-text">
-            <div class="option-card-title">API Key</div>
-            <div class="option-card-desc">Standard OpenAI-compatible key for any app</div>
+            <div class="option-card-title">OpenAI Compatible</div>
+            <div class="option-card-desc">Works with any OpenAI SDK or app — /v1/chat/completions</div>
+          </div>
+        </button>
+        <button class="option-card" onclick="OS.createApiKeyForm('anthropic')">
+          <div class="option-card-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></div>
+          <div class="option-card-text">
+            <div class="option-card-title">Anthropic Compatible</div>
+            <div class="option-card-desc">Works with Anthropic SDK — /v1/messages</div>
           </div>
         </button>
         <button class="option-card" onclick="OS.createOpenClawKeyForm()">
@@ -2046,8 +2060,11 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
     `);
   }
 
-  async function createApiKeyForm() {
+  async function createApiKeyForm(format = 'openai') {
     await Promise.all([loadSoulsList(), loadProvidersList()]);
+
+    const formatLabels = { openai: 'OpenAI Compatible', anthropic: 'Anthropic Compatible' };
+    const formatEndpoints = { openai: '/v1/chat/completions', anthropic: '/v1/messages' };
 
     // Provider info — show which provider handles requests
     const defaultProvider = _providers.find(p => p.is_enabled);
@@ -2089,8 +2106,15 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
         </div>`
       : '';
 
-    openModal('Create API Key', `
+    openModal(`Create ${formatLabels[format] || 'API'} Key`, `
       <form onsubmit="OS.saveKey(event)" id="key-form">
+        <input type="hidden" name="api_format" value="${format}">
+        <div class="form-group">
+          <div style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-hover);font-size:12px;color:var(--text-secondary)">
+            Endpoint: <code style="color:var(--text)">${formatEndpoints[format]}</code>
+            ${format === 'anthropic' ? ' &middot; Auth: <code style="color:var(--text)">x-api-key</code> header' : ' &middot; Auth: <code style="color:var(--text)">Bearer</code> token'}
+          </div>
+        </div>
         <div class="form-group"><label class="form-label">Name</label><input name="name" required placeholder="e.g. my-assistant"></div>
         ${routingHint}
         ${soulCheckboxes}
@@ -2148,6 +2172,7 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
 
     const { data } = await api('/admin/keys', { method: 'POST', body: {
       name: f.get('name'),
+      api_format: 'openclaw',
       rate_limit_rpm: parseInt(f.get('rpm')) || 120,
     }});
 
@@ -2204,18 +2229,61 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
     const f = new FormData(e.target);
     const allSouls = document.getElementById('key-all-souls')?.checked ?? true;
     const soulIds = allSouls ? [] : Array.from(document.querySelectorAll('.soul-checkbox:checked')).map(cb => cb.value);
+    const format = f.get('api_format') || 'openai';
 
     const { data } = await api('/admin/keys', { method: 'POST', body: {
       name: f.get('name'),
+      api_format: format,
       soul_ids: soulIds.length > 0 ? soulIds : undefined,
       rate_limit_rpm: parseInt(f.get('rpm')) || 60,
     }});
     if (data?.key) {
+      const host = window.location.hostname || 'localhost';
+      const port = window.location.port || '3700';
+      const baseUrl = `http://${host}:${port}`;
+
+      let usageSnippet = '';
+      if (format === 'anthropic') {
+        const snippet = `import Anthropic from "@anthropic-ai/sdk";
+
+const client = new Anthropic({
+  apiKey: "${data.key}",
+  baseURL: "${baseUrl}",
+});
+
+const message = await client.messages.create({
+  model: "claude-sonnet-4-6",
+  max_tokens: 1024,
+  messages: [{ role: "user", content: "Hello!" }],
+});`;
+        usageSnippet = `
+          <p style="margin:12px 0 8px;font-size:13px;font-weight:600">Usage with Anthropic SDK:</p>
+          <div class="code-block" style="font-size:11px;max-height:240px;overflow:auto;white-space:pre">${h(snippet)}</div>
+          <button class="btn btn-secondary" style="width:100%;margin-top:8px" onclick="navigator.clipboard.writeText(${h(JSON.stringify(snippet))});OS.toast('Snippet copied!','success')">Copy Snippet</button>`;
+      } else {
+        const snippet = `import OpenAI from "openai";
+
+const client = new OpenAI({
+  apiKey: "${data.key}",
+  baseURL: "${baseUrl}/v1",
+});
+
+const response = await client.chat.completions.create({
+  model: "claude-sonnet-4-6",
+  messages: [{ role: "user", content: "Hello!" }],
+});`;
+        usageSnippet = `
+          <p style="margin:12px 0 8px;font-size:13px;font-weight:600">Usage with OpenAI SDK:</p>
+          <div class="code-block" style="font-size:11px;max-height:240px;overflow:auto;white-space:pre">${h(snippet)}</div>
+          <button class="btn btn-secondary" style="width:100%;margin-top:8px" onclick="navigator.clipboard.writeText(${h(JSON.stringify(snippet))});OS.toast('Snippet copied!','success')">Copy Snippet</button>`;
+      }
+
       closeModal();
       openModal('Key Created', `
         <p style="margin-bottom:12px;font-size:13px;color:var(--text-secondary)">Save this key now. It will not be shown again.</p>
         <div class="code-block" style="word-break:break-all">${data.key}</div>
-        <button class="btn btn-secondary" style="width:100%;margin-top:16px" onclick="navigator.clipboard.writeText('${data.key}');OS.toast('Copied!','success')">Copy to Clipboard</button>
+        <button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="navigator.clipboard.writeText('${data.key}');OS.toast('Copied!','success')">Copy Key</button>
+        ${usageSnippet}
       `);
     }
     loaders.keys();

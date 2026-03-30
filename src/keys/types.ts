@@ -1,7 +1,10 @@
+export type ApiFormat = 'openai' | 'anthropic' | 'openclaw';
+
 export interface ApiKey {
   id: string;
   name: string;
   key_prefix: string;
+  api_format: ApiFormat;
   soul_id: string | null;
   soul_ids: string[];
   rate_limit_rpm: number;
@@ -16,6 +19,7 @@ export interface ApiKey {
 
 export interface CreateKeyInput {
   name: string;
+  api_format?: ApiFormat;
   soul_id?: string;
   soul_ids?: string[];
   rate_limit_rpm?: number;
