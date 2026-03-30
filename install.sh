@@ -123,15 +123,41 @@ npm run build 2>&1 | tail -1
 
 # ── Link globally ────────────────────────────────────────────
 echo -e "${CYAN}→${RESET} Linking openhinge command..."
-npm link --silent 2>/dev/null || {
-  # npm link may need sudo on some systems
-  echo -e "${YELLOW}!${RESET} Trying with sudo..."
-  sudo npm link --silent 2>/dev/null || echo -e "${YELLOW}!${RESET} Could not link globally. Use: cd ~/openhinge && npx openhinge"
-}
+
+# Strategy 1: npm link
+npm link --silent 2>/dev/null || sudo npm link --silent 2>/dev/null || true
+
+# Strategy 2: Direct symlink in /usr/local/bin as fallback
+if ! command -v openhinge &>/dev/null; then
+  BIN_TARGET="$INSTALL_DIR/dist/bin/openhinge.js"
+  if [ -f "$BIN_TARGET" ]; then
+    sudo ln -sf "$BIN_TARGET" /usr/local/bin/openhinge 2>/dev/null || \
+    ln -sf "$BIN_TARGET" "$HOME/.local/bin/openhinge" 2>/dev/null && \
+    mkdir -p "$HOME/.local/bin" 2>/dev/null || true
+  fi
+fi
+
+# Strategy 3: Add shell alias to profile if still not found
+if ! command -v openhinge &>/dev/null; then
+  SHELL_RC=""
+  if [ -f "$HOME/.zshrc" ]; then SHELL_RC="$HOME/.zshrc"
+  elif [ -f "$HOME/.bashrc" ]; then SHELL_RC="$HOME/.bashrc"
+  elif [ -f "$HOME/.bash_profile" ]; then SHELL_RC="$HOME/.bash_profile"
+  fi
+  if [ -n "$SHELL_RC" ]; then
+    if ! grep -q "openhinge" "$SHELL_RC" 2>/dev/null; then
+      echo "" >> "$SHELL_RC"
+      echo "# OpenHinge" >> "$SHELL_RC"
+      echo "alias openhinge='node $INSTALL_DIR/dist/bin/openhinge.js'" >> "$SHELL_RC"
+      echo -e "${GREEN}✓${RESET} Added openhinge alias to $SHELL_RC (restart terminal or run: source $SHELL_RC)"
+    fi
+  fi
+fi
+
 if command -v openhinge &>/dev/null; then
   echo -e "${GREEN}✓${RESET} openhinge command available globally"
 else
-  echo -e "${YELLOW}!${RESET} Run 'cd ~/openhinge && npx openhinge' if the command is not found"
+  echo -e "${YELLOW}!${RESET} Run 'source ~/.zshrc' or restart your terminal to use the openhinge command"
 fi
 
 echo ""
