@@ -1548,7 +1548,7 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
 
     closeModal();
     toast(`Connected ${res.provider?.name || 'Claude'}`, 'success');
-    loadProviders();
+    loaders.providers();
   }
 
   function onProviderTypeChange() {
@@ -1646,7 +1646,7 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
         toast(`Using ${res.subscription} subscription via OAuth`, 'success');
       }
       closeModal();
-      loadProviders();
+      loaders.providers();
       return;
     }
 
@@ -1661,7 +1661,7 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
           clearInterval(pollInterval);
           const p = status.provider;
           toast(`Connected ${p.name}` + (p.model ? ` (${p.model})` : ''), 'success');
-          loadProviders();
+          loaders.providers();
         } else if (status.status === 'error') {
           clearInterval(pollInterval);
           toast(status.error || 'Auth failed', 'error');
