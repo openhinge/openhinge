@@ -169,6 +169,10 @@ export class ClaudeProvider extends BaseProvider {
     }
     if (params.temperature !== undefined) body.temperature = params.temperature;
     if (params.stop) body.stop_sequences = params.stop;
+    if (params.top_p !== undefined) body.top_p = params.top_p;
+    if (params.top_k !== undefined) body.top_k = params.top_k;
+    if (params.metadata) body.metadata = params.metadata;
+    if (params.thinking) body.thinking = params.thinking;
 
     // Tools: client-provided tools take priority, then response_schema fallback
     if (params.tools && params.tools.length > 0) {
@@ -272,6 +276,10 @@ export class ClaudeProvider extends BaseProvider {
       body.system = systemMsg.content;
     }
     if (params.temperature !== undefined) body.temperature = params.temperature;
+    if (params.top_p !== undefined) body.top_p = params.top_p;
+    if (params.top_k !== undefined) body.top_k = params.top_k;
+    if (params.metadata) body.metadata = params.metadata;
+    if (params.thinking) body.thinking = params.thinking;
 
     // Pass tools through for streaming too
     if (params.tools && params.tools.length > 0) {

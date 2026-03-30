@@ -67,6 +67,7 @@ interface ChatBody {
   response_schema?: JsonSchema;
   tools?: ToolDefinition[];
   tool_choice?: unknown;
+  top_p?: number;
 }
 
 export async function chatRoutes(app: FastifyInstance): Promise<void> {
@@ -148,6 +149,7 @@ async function handleChat(request: FastifyRequest<{ Params?: { slug?: string }; 
     response_schema: responseSchema,
     tools: body.tools,
     tool_choice: body.tool_choice,
+    top_p: body.top_p,
   };
 
   if (body.stream) {

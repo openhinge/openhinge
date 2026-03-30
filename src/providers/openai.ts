@@ -240,6 +240,7 @@ export class OpenAIProvider extends BaseProvider {
       max_completion_tokens: params.max_tokens || 4096,
     };
     if (params.temperature !== undefined) body.temperature = params.temperature;
+    if (params.top_p !== undefined) body.top_p = params.top_p;
     if (params.stop) body.stop = params.stop;
     if (params.tools && params.tools.length > 0) {
       // Normalize to OpenAI format
@@ -306,6 +307,7 @@ export class OpenAIProvider extends BaseProvider {
       stream_options: { include_usage: true },
     };
     if (params.temperature !== undefined) body.temperature = params.temperature;
+    if (params.top_p !== undefined) body.top_p = params.top_p;
     if (params.tools && params.tools.length > 0) {
       body.tools = params.tools.map(t => {
         if (t.function) return { type: 'function', function: t.function };

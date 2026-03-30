@@ -38,6 +38,10 @@ export interface ChatRequest {
   response_schema?: JsonSchema;
   tools?: ToolDefinition[];
   tool_choice?: unknown;
+  top_p?: number;
+  top_k?: number;
+  metadata?: { user_id?: string };
+  thinking?: { type: string; budget_tokens?: number };
 }
 
 export interface FallbackAttempt {

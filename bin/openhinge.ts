@@ -586,6 +586,130 @@ keyCmd.command('create')
     closeDatabase();
   });
 
+// Connect command — auto-configure external tools to use OpenHinge
+const connectCmd = program.command('connect').description('Connect external tools to OpenHinge');
+
+connectCmd.command('openclaw')
+  .description('Auto-configure OpenClaw to use OpenHinge as its API provider')
+  .option('--key-name <name>', 'Name for the API key', 'OpenClaw')
+  .option('--disconnect', 'Remove OpenHinge from OpenClaw config')
+  .action(async (opts) => {
+    const { readFileSync, writeFileSync, existsSync } = await import('node:fs');
+    const { resolve } = await import('node:path');
+    const { homedir } = await import('node:os');
+
+    const openclawConfig = resolve(homedir(), '.openclaw/openclaw.json');
+    if (!existsSync(openclawConfig)) {
+      console.error('OpenClaw not found. Expected config at ~/.openclaw/openclaw.json');
+      process.exit(1);
+    }
+
+    const oc = JSON.parse(readFileSync(openclawConfig, 'utf-8'));
+
+    if (opts.disconnect) {
+      // Remove OpenHinge provider from OpenClaw
+      if (oc.models?.providers?.openhinge) {
+        delete oc.models.providers.openhinge;
+        console.log('Removed OpenHinge provider from OpenClaw.');
+      }
+      // Revert model references
+      if (oc.agents?.defaults?.model?.primary?.startsWith('openhinge/')) {
+        oc.agents.defaults.model.primary = 'anthropic/claude-sonnet-4-6';
+        console.log('Reverted default model to anthropic/claude-sonnet-4-6');
+      }
+      if (oc.agents?.defaults?.model?.fallbacks) {
+        oc.agents.defaults.model.fallbacks = oc.agents.defaults.model.fallbacks
+          .filter((f: string) => !f.startsWith('openhinge/'));
+      }
+      writeFileSync(openclawConfig, JSON.stringify(oc, null, 2));
+      console.log('OpenClaw disconnected from OpenHinge.');
+      return;
+    }
+
+    // Create an API key for OpenClaw
+    const config = loadConfig();
+    initDatabase(config.db.path);
+
+    // Check if key already exists
+    const existingKeys = keys.getAllKeys().filter(k => k.name === opts.keyName);
+    let apiKey: string;
+    if (existingKeys.length > 0) {
+      console.log(`Using existing key: ${existingKeys[0].name} (${existingKeys[0].key_prefix}...)`);
+      console.log('Note: Cannot retrieve existing key value. Creating a new one.');
+    }
+
+    const newKey = keys.createKey({
+      name: opts.keyName,
+      rate_limit_rpm: 120,
+      api_format: 'openai',
+    });
+    apiKey = newKey.key!;
+    console.log(`Created API key: ${newKey.name}`);
+
+    // Detect available models from our providers
+    const { loadProviders: lp, getAllProviders: gap } = await import('../src/providers/index.js');
+    lp(config.encryption.key);
+    const providers = gap();
+    const modelList: Array<{ id: string; name: string }> = [];
+
+    for (const p of providers) {
+      try {
+        const models = await p.listModels();
+        for (const m of models) {
+          modelList.push({ id: m, name: m });
+        }
+      } catch { /* skip */ }
+    }
+
+    // Build OpenClaw provider config
+    const openhingeProvider: Record<string, unknown> = {
+      baseUrl: 'http://127.0.0.1:3700/v1',
+      apiKey: apiKey,
+      api: 'openai-completions',
+      models: modelList.slice(0, 10).map(m => ({
+        id: m.id,
+        name: m.name,
+        reasoning: false,
+        input: ['text'],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 200000,
+        maxTokens: 8192,
+      })),
+    };
+
+    // Inject into OpenClaw config
+    if (!oc.models) oc.models = {};
+    if (!oc.models.providers) oc.models.providers = {};
+    oc.models.providers.openhinge = openhingeProvider;
+
+    // Add OpenHinge models to agent defaults as fallbacks
+    if (oc.agents?.defaults?.model?.fallbacks && modelList.length > 0) {
+      // Remove old openhinge fallbacks
+      oc.agents.defaults.model.fallbacks = oc.agents.defaults.model.fallbacks
+        .filter((f: string) => !f.startsWith('openhinge/'));
+      // Add new ones
+      for (const m of modelList.slice(0, 3)) {
+        oc.agents.defaults.model.fallbacks.push(`openhinge/${m.id}`);
+      }
+    }
+
+    writeFileSync(openclawConfig, JSON.stringify(oc, null, 2));
+    closeDatabase();
+
+    console.log('');
+    console.log('OpenClaw connected to OpenHinge!');
+    console.log('');
+    console.log('Provider added: openhinge');
+    console.log(`Models: ${modelList.slice(0, 10).map(m => m.id).join(', ')}`);
+    console.log(`API endpoint: http://127.0.0.1:3700/v1`);
+    console.log('');
+    console.log('To use as primary model in OpenClaw:');
+    console.log(`  Edit ~/.openclaw/openclaw.json → agents.defaults.model.primary = "openhinge/${modelList[0]?.id || 'claude-sonnet-4-6'}"`);
+    console.log('');
+    console.log('To disconnect:');
+    console.log('  openhinge connect openclaw --disconnect');
+  });
+
 // Status command
 program.command('status')
   .description('Show system status')

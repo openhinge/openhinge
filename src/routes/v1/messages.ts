@@ -20,6 +20,10 @@ interface AnthropicBody {
   stop_sequences?: string[];
   tools?: Array<{ name: string; description?: string; input_schema?: unknown }>;
   tool_choice?: unknown;
+  top_p?: number;
+  top_k?: number;
+  metadata?: { user_id?: string };
+  thinking?: { type: string; budget_tokens?: number };
 }
 
 export async function messagesRoutes(app: FastifyInstance): Promise<void> {
@@ -151,6 +155,10 @@ async function handleMessages(
     stop: body.stop_sequences,
     tools,
     tool_choice: body.tool_choice,
+    top_p: body.top_p,
+    top_k: body.top_k,
+    metadata: body.metadata,
+    thinking: body.thinking,
   };
 
   if (body.stream) {

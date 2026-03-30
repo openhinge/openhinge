@@ -1,6 +1,6 @@
 {
   "name": "openhinge",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Self-hosted AI gateway — multi-provider, multi-tenant, soul-based routing",
   "type": "module",
   "engines": {
