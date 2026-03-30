@@ -428,7 +428,9 @@ const OS = (() => {
           <td style="text-align:right">
             ${k.is_enabled ? `<button class="btn btn-ghost btn-icon btn-sm" title="Revoke" onclick="OS.revokeKey('${k.id}')">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--warning)" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
-            </button>` : ''}
+            </button>` : `<button class="btn btn-ghost btn-icon btn-sm" title="Reactivate" onclick="OS.reactivateKey('${k.id}')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+            </button>`}
             <button class="btn btn-ghost btn-icon btn-sm" title="Delete" onclick="OS.deleteKey('${k.id}')">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
             </button>
@@ -2154,6 +2156,12 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
     toast('Key revoked', 'success'); loaders.keys();
   }
 
+  async function reactivateKey(id) {
+    const res = await api(`/admin/keys/${id}/reactivate`, { method: 'POST' });
+    if (res.error) { toast(res.error, 'error'); return; }
+    toast('Key reactivated', 'success'); loaders.keys();
+  }
+
   async function deleteKey(id) {
     if (!confirm('Delete this key permanently?')) return;
     const res = await api(`/admin/keys/${id}`, { method: 'DELETE' });
@@ -2461,7 +2469,7 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
     closeModal, toast, navigate, welcomeSubmit, welcomeGo,
     addProviderModal, addProviderStep2, showApiKeyForm, showClaudeOauthForm, saveClaudeOauth, claudeOAuthLogin, saveProvider, editProviderModal, updateProvider, deleteProvider, healthCheck, healthCheckOne, fetchModels, onProviderTypeChange, quickAdd, openApiPage,
     addSoulModal, saveSoul, editSoulModal, deleteSoul, onSoulProviderChange,
-    createKeyModal, createApiKeyForm, createOpenClawKeyForm, saveOpenClawKey, saveKey, revokeKey, deleteKey, toggleAllSouls,
+    createKeyModal, createApiKeyForm, createOpenClawKeyForm, saveOpenClawKey, saveKey, revokeKey, reactivateKey, deleteKey, toggleAllSouls,
     saveCloudflare, saveSettings, changePassword, scrollDoc,
     cfConnect, cfZoneChange,
     provFilter, provClearFilters, provToggle, provSelectAll, provSelectNone, provBulk,

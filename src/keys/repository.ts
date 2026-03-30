@@ -81,6 +81,11 @@ export function revokeKey(id: string): boolean {
   return result.changes > 0;
 }
 
+export function reactivateKey(id: string): boolean {
+  const result = getDb().prepare('UPDATE api_keys SET is_enabled = 1 WHERE id = ?').run(id);
+  return result.changes > 0;
+}
+
 export function deleteKey(id: string): boolean {
   const db = getDb();
   db.prepare('DELETE FROM api_key_souls WHERE api_key_id = ?').run(id);

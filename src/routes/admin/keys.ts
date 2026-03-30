@@ -21,4 +21,9 @@ export async function keyAdminRoutes(app: FastifyInstance): Promise<void> {
     const ok = keys.revokeKey(request.params.id);
     return { ok };
   });
+
+  app.post<{ Params: { id: string } }>('/admin/keys/:id/reactivate', async (request) => {
+    const ok = keys.reactivateKey(request.params.id);
+    return { ok };
+  });
 }
