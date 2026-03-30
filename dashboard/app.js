@@ -2247,6 +2247,7 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
 
   async function saveKey(e) {
     e.preventDefault();
+    try {
     const f = new FormData(e.target);
     const allSouls = document.getElementById('key-all-souls')?.checked ?? true;
     const soulIds = allSouls ? [] : Array.from(document.querySelectorAll('.soul-checkbox:checked')).map(cb => cb.value);
@@ -2263,51 +2264,28 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
       const port = window.location.port || '3700';
       const baseUrl = `http://${host}:${port}`;
 
-      let usageSnippet = '';
+      // Store snippet text for copy buttons — avoid inline onclick escaping issues
+      window._ohKeySnippet = '';
       if (format === 'anthropic') {
-        const snippet = `import Anthropic from "@anthropic-ai/sdk";
-
-const client = new Anthropic({
-  apiKey: "${data.key}",
-  baseURL: "${baseUrl}",
-});
-
-const message = await client.messages.create({
-  model: "claude-sonnet-4-6",
-  max_tokens: 1024,
-  messages: [{ role: "user", content: "Hello!" }],
-});`;
-        usageSnippet = `
-          <p style="margin:12px 0 8px;font-size:13px;font-weight:600">Usage with Anthropic SDK:</p>
-          <div class="code-block" style="font-size:11px;max-height:240px;overflow:auto;white-space:pre">${h(snippet)}</div>
-          <button class="btn btn-secondary" style="width:100%;margin-top:8px" onclick="navigator.clipboard.writeText(${h(JSON.stringify(snippet))});OS.toast('Snippet copied!','success')">Copy Snippet</button>`;
+        window._ohKeySnippet = `import Anthropic from "@anthropic-ai/sdk";\n\nconst client = new Anthropic({\n  apiKey: "${data.key}",\n  baseURL: "${baseUrl}",\n});\n\nconst message = await client.messages.create({\n  model: "claude-sonnet-4-6",\n  max_tokens: 1024,\n  messages: [{ role: "user", content: "Hello!" }],\n});`;
       } else {
-        const snippet = `import OpenAI from "openai";
-
-const client = new OpenAI({
-  apiKey: "${data.key}",
-  baseURL: "${baseUrl}/v1",
-});
-
-const response = await client.chat.completions.create({
-  model: "claude-sonnet-4-6",
-  messages: [{ role: "user", content: "Hello!" }],
-});`;
-        usageSnippet = `
-          <p style="margin:12px 0 8px;font-size:13px;font-weight:600">Usage with OpenAI SDK:</p>
-          <div class="code-block" style="font-size:11px;max-height:240px;overflow:auto;white-space:pre">${h(snippet)}</div>
-          <button class="btn btn-secondary" style="width:100%;margin-top:8px" onclick="navigator.clipboard.writeText(${h(JSON.stringify(snippet))});OS.toast('Snippet copied!','success')">Copy Snippet</button>`;
+        window._ohKeySnippet = `import OpenAI from "openai";\n\nconst client = new OpenAI({\n  apiKey: "${data.key}",\n  baseURL: "${baseUrl}/v1",\n});\n\nconst response = await client.chat.completions.create({\n  model: "claude-sonnet-4-6",\n  messages: [{ role: "user", content: "Hello!" }],\n});`;
       }
+
+      const sdkLabel = format === 'anthropic' ? 'Anthropic' : 'OpenAI';
 
       closeModal();
       openModal('Key Created', `
         <p style="margin-bottom:12px;font-size:13px;color:var(--text-secondary)">Save this key now. It will not be shown again.</p>
         <div class="code-block" style="word-break:break-all">${data.key}</div>
         <button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="navigator.clipboard.writeText('${data.key}');OS.toast('Copied!','success')">Copy Key</button>
-        ${usageSnippet}
+        <p style="margin:12px 0 8px;font-size:13px;font-weight:600">Usage with ${sdkLabel} SDK:</p>
+        <div class="code-block" style="font-size:11px;max-height:240px;overflow:auto;white-space:pre">${h(window._ohKeySnippet)}</div>
+        <button class="btn btn-secondary" style="width:100%;margin-top:8px" onclick="navigator.clipboard.writeText(window._ohKeySnippet);OS.toast('Snippet copied!','success')">Copy Snippet</button>
       `);
     }
     loaders.keys();
+    } catch (err) { console.error('saveKey error:', err); toast('Error: ' + err.message, 'error'); }
   }
 
   async function revokeKey(id) {
