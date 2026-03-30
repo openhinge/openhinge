@@ -136,7 +136,12 @@ export class ClaudeProvider extends BaseProvider {
       // Inject soul/system prompt as a user instruction since subscription API
       // rejects modified system prompts
       if (systemMsg) {
-        messages.unshift({ role: 'user', content: `[System Instructions: ${systemMsg.content}]` });
+        // Merge with first user message to avoid consecutive user messages
+        if (messages.length > 0 && messages[0].role === 'user') {
+          messages[0] = { role: 'user', content: `[System Instructions: ${systemMsg.content}]\n\n${messages[0].content}` };
+        } else {
+          messages.unshift({ role: 'user', content: `[System Instructions: ${systemMsg.content}]` });
+        }
       }
     } else if (systemMsg) {
       body.system = systemMsg.content;
@@ -205,7 +210,11 @@ export class ClaudeProvider extends BaseProvider {
     if (this.isSubscription) {
       body.system = "You are Claude Code, Anthropic's official CLI for Claude.";
       if (systemMsg) {
-        messages.unshift({ role: 'user', content: `[System Instructions: ${systemMsg.content}]` });
+        if (messages.length > 0 && messages[0].role === 'user') {
+          messages[0] = { role: 'user', content: `[System Instructions: ${systemMsg.content}]\n\n${messages[0].content}` };
+        } else {
+          messages.unshift({ role: 'user', content: `[System Instructions: ${systemMsg.content}]` });
+        }
       }
     } else if (systemMsg) {
       body.system = systemMsg.content;
