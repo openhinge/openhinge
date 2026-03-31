@@ -364,6 +364,8 @@ providerCmd.command('add')
   .option('-k, --key <key>', 'API key or OAuth token')
   .option('-m, --model <model>', 'Default model')
   .option('-p, --priority <n>', 'Priority (higher = preferred)', '0')
+  .option('--timeout <ms>', 'Request timeout in ms (default: 120000)')
+  .option('--stream-timeout <ms>', 'Stream first-chunk timeout in ms (default: 60000)')
   .action((opts) => {
     const config = loadConfig();
     initDatabase(config.db.path);
@@ -373,7 +375,10 @@ providerCmd.command('add')
     if (opts.key) {
       credentials[opts.key.startsWith('sk-ant-oat01-') ? 'oauth_token' : 'api_key'] = opts.key;
     }
-    const providerConfig = opts.model ? { default_model: opts.model } : {};
+    const providerConfig: Record<string, unknown> = {};
+    if (opts.model) providerConfig.default_model = opts.model;
+    if (opts.timeout) providerConfig.timeout_ms = parseInt(opts.timeout);
+    if (opts.streamTimeout) providerConfig.stream_timeout_ms = parseInt(opts.streamTimeout);
 
     getDb().prepare(`
       INSERT INTO providers (id, name, type, base_url, config, credentials, priority)

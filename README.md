@@ -143,6 +143,8 @@ openhinge provider health
 | `-u, --url <url>` | Custom base URL (for self-hosted or proxies) |
 | `-m, --model <model>` | Default model for this provider |
 | `-p, --priority <n>` | Priority — higher number = preferred (default: 0) |
+| `--timeout <ms>` | Request timeout in ms (default: 120000 / 2 min) |
+| `--stream-timeout <ms>` | Stream first-chunk timeout in ms (default: 60000 / 1 min) |
 
 **Provider add-claude options:**
 

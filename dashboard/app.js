@@ -1790,6 +1790,8 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
 
     const models = modelLists[p.type] || [];
     const currentModel = config.default_model || '';
+    const currentTimeout = config.timeout_ms || '';
+    const currentStreamTimeout = config.stream_timeout_ms || '';
     const modelField = models.length > 0
       ? `<select name="model" class="input-mono">
           <option value="">— Use provider default —</option>
@@ -1815,6 +1817,18 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
           <label class="form-label">Default Model</label>
           ${modelField}
         </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Request Timeout</label>
+            <input name="timeout_ms" type="number" value="${currentTimeout}" placeholder="120000" class="input-mono">
+            <p class="form-hint">ms — non-streaming requests (default: 120s)</p>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Stream Timeout</label>
+            <input name="stream_timeout_ms" type="number" value="${currentStreamTimeout}" placeholder="60000" class="input-mono">
+            <p class="form-hint">ms — first chunk wait time (default: 60s)</p>
+          </div>
+        </div>
         <div class="form-group">
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
             <input type="checkbox" name="is_enabled" ${p.is_enabled !== 0 ? 'checked' : ''} style="width:auto">
@@ -1836,7 +1850,13 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
       is_enabled: f.has('is_enabled'),
     };
     const model = f.get('model');
-    if (model) body.provider_config = { default_model: model };
+    const timeoutMs = parseInt(f.get('timeout_ms')) || undefined;
+    const streamTimeoutMs = parseInt(f.get('stream_timeout_ms')) || undefined;
+    const provCfg = {};
+    if (model) provCfg.default_model = model;
+    if (timeoutMs) provCfg.timeout_ms = timeoutMs;
+    if (streamTimeoutMs) provCfg.stream_timeout_ms = streamTimeoutMs;
+    if (Object.keys(provCfg).length > 0) body.provider_config = provCfg;
     const key = f.get('api_key');
     if (key) {
       const credKey = key.startsWith('sk-ant-oat01-') ? 'oauth_token' : 'api_key';

@@ -48,7 +48,12 @@ export async function providerAdminRoutes(app: FastifyInstance, config: Config):
 
     if (name !== undefined) { sets.push('name = ?'); values.push(name); }
     if (base_url !== undefined) { sets.push('base_url = ?'); values.push(base_url); }
-    if (provider_config !== undefined) { sets.push('config = ?'); values.push(JSON.stringify(provider_config)); }
+    if (provider_config !== undefined) {
+      // Merge with existing config so partial updates don't wipe other fields
+      const existing = getDb().prepare('SELECT config FROM providers WHERE id = ?').get(id) as { config: string } | undefined;
+      const merged = { ...(existing ? JSON.parse(existing.config || '{}') : {}), ...provider_config };
+      sets.push('config = ?'); values.push(JSON.stringify(merged));
+    }
     if (credentials !== undefined) {
       sets.push('credentials = ?');
       values.push(encrypt(JSON.stringify(credentials), config.encryption.key));

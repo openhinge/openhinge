@@ -116,16 +116,28 @@ function getProviderHealth(id: string): string {
   return row?.health_status || 'unknown';
 }
 
-function getProviderTimeout(id: string): number {
+const DEFAULT_TIMEOUT_MS = 120000;       // 120s for non-streaming (thinking models need time)
+const DEFAULT_STREAM_TIMEOUT_MS = 60000; // 60s for first chunk in streaming
+
+function getProviderConfig(id: string): Record<string, unknown> {
   const provider = providers.get(id);
-  if (!provider) return 30000;
-  const config = (provider as any).config?.config || {};
-  return (config.timeout_ms as number) || 30000;
+  if (!provider) return {};
+  return (provider as any).config?.config || {};
+}
+
+function getProviderTimeout(id: string): number {
+  const config = getProviderConfig(id);
+  return (config.timeout_ms as number) || DEFAULT_TIMEOUT_MS;
+}
+
+function getProviderStreamTimeout(id: string): number {
+  const config = getProviderConfig(id);
+  return (config.stream_timeout_ms as number) || DEFAULT_STREAM_TIMEOUT_MS;
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`Timeout after ${ms}ms`)), ms);
+    const timer = setTimeout(() => reject(new Error(`Timeout after ${ms}ms — increase timeout in provider settings`)), ms);
     promise.then(
       (v) => { clearTimeout(timer); resolve(v); },
       (e) => { clearTimeout(timer); reject(e); },
@@ -176,17 +188,35 @@ export async function* streamWithFallback(
     const provider = providers.get(id);
     if (!provider) continue;
 
+    const streamTimeout = getProviderStreamTimeout(id);
     const start = Date.now();
 
     try {
       let first = true;
-      for await (const chunk of provider.chatStream(params)) {
-        if (first && attempts.length > 0) {
-          yield { provider, chunk, fallback_attempts: attempts };
-          first = false;
+      const stream = provider.chatStream(params);
+      const iterator = stream[Symbol.asyncIterator]();
+
+      // First chunk has a timeout — if provider hangs, fail over
+      const firstResult = await withTimeout(
+        iterator.next(),
+        streamTimeout,
+        `${id} stream first chunk`,
+      );
+
+      if (!firstResult.done) {
+        if (attempts.length > 0) {
+          yield { provider, chunk: firstResult.value, fallback_attempts: attempts };
         } else {
-          yield { provider, chunk };
+          yield { provider, chunk: firstResult.value };
         }
+        first = false;
+      }
+
+      // Remaining chunks stream without timeout (response is flowing)
+      while (true) {
+        const result = await iterator.next();
+        if (result.done) break;
+        yield { provider, chunk: result.value };
       }
       return;
     } catch (err: any) {
