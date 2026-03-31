@@ -95,8 +95,9 @@ After installation, the `openhinge` command is available globally.
 ### Server Management
 
 ```bash
-openhinge start              # Start server in background
+openhinge start              # Start server (checks for updates first)
 openhinge start -f           # Start in foreground (blocks terminal)
+openhinge start --skip-update-check  # Start without checking for updates
 openhinge stop               # Stop the server
 openhinge restart             # Restart the server
 openhinge status              # Show providers, souls, keys, request counts

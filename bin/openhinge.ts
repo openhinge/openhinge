@@ -35,9 +35,12 @@ program
 program.command('start')
   .description('Start the OpenHinge gateway server (runs in background)')
   .option('-f, --foreground', 'Run in foreground (blocks terminal)')
+  .option('--skip-update-check', 'Skip the update check on start')
   .action(async (opts) => {
     const { resolve } = await import('node:path');
     const { existsSync, openSync, mkdirSync, writeFileSync } = await import('node:fs');
+    const { execSync, spawn } = await import('node:child_process');
+    const { createInterface } = await import('node:readline');
 
     let root = resolve(__dirname, '..');
     if (!existsSync(resolve(root, 'package.json'))) root = resolve(root, '..');
@@ -49,7 +52,6 @@ program.command('start')
     }
 
     // Check if already running
-    const { execSync } = await import('node:child_process');
     try {
       const pids = execSync('lsof -ti:3700', { encoding: 'utf-8' }).trim();
       if (pids) {
@@ -58,9 +60,69 @@ program.command('start')
       }
     } catch { /* not running */ }
 
+    // Check for updates (unless --skip-update-check or non-interactive)
+    if (!opts.skipUpdateCheck && process.stdin.isTTY) {
+      try {
+        execSync('git fetch origin --quiet', { cwd: root, timeout: 10000, stdio: 'ignore' });
+        const local = execSync('git rev-parse HEAD', { cwd: root, encoding: 'utf-8' }).trim();
+        const remote = execSync('git rev-parse origin/main', { cwd: root, encoding: 'utf-8' }).trim();
+
+        if (local !== remote) {
+          // Get new commits
+          const log = execSync(`git log --oneline ${local}..${remote}`, { cwd: root, encoding: 'utf-8' }).trim();
+          const commitCount = log.split('\n').filter(Boolean).length;
+
+          // Get remote version
+          let remoteVersion = '';
+          try {
+            remoteVersion = execSync(`git show origin/main:package.json`, { cwd: root, encoding: 'utf-8' });
+            remoteVersion = JSON.parse(remoteVersion).version || '';
+          } catch { /* ignore */ }
+
+          console.log('');
+          console.log(`\x1b[33m⬆ Update available\x1b[0m${remoteVersion ? ` — v${pkg.version} → v${remoteVersion}` : ''} (${commitCount} commit${commitCount > 1 ? 's' : ''})`);
+          console.log('');
+          const lines = log.split('\n').slice(0, 10);
+          for (const line of lines) {
+            const [hash, ...rest] = line.split(' ');
+            console.log(`  \x1b[2m${hash}\x1b[0m ${rest.join(' ')}`);
+          }
+          if (commitCount > 10) console.log(`  \x1b[2m... and ${commitCount - 10} more\x1b[0m`);
+          console.log('');
+
+          const answer = await new Promise<string>((resolve) => {
+            const rl = createInterface({ input: process.stdin, output: process.stdout });
+            rl.question('Update before starting? [Y/n] ', (ans) => {
+              rl.close();
+              resolve(ans.trim().toLowerCase());
+            });
+          });
+
+          if (answer === '' || answer === 'y' || answer === 'yes') {
+            console.log('Updating...');
+            try {
+              execSync('git checkout -- package-lock.json 2>/dev/null || true', { cwd: root, stdio: 'ignore' });
+              execSync('git pull --ff-only origin main', { cwd: root, stdio: 'inherit' });
+              execSync('npm install --production=false --silent', { cwd: root, stdio: 'inherit' });
+              execSync('npm run build', { cwd: root, stdio: 'inherit' });
+              execSync('npm link --silent 2>/dev/null || sudo npm link --silent 2>/dev/null || true', { cwd: root, stdio: 'ignore' });
+              console.log(`\x1b[32mUpdated to v${remoteVersion || 'latest'}\x1b[0m`);
+            } catch (err: any) {
+              console.error(`\x1b[31mUpdate failed: ${err.message}\x1b[0m`);
+              console.log('Starting with current version...');
+            }
+          } else {
+            console.log('Skipping update.');
+          }
+        }
+      } catch { /* git not available or network error — skip silently */ }
+    }
+
+    // Re-resolve entry in case update changed it
+    const finalEntry = resolve(root, 'dist/src/index.js');
+
     if (opts.foreground) {
-      const { spawn } = await import('node:child_process');
-      const server = spawn('node', [entry], {
+      const server = spawn('node', [finalEntry], {
         cwd: root,
         stdio: 'inherit',
       });
@@ -68,13 +130,12 @@ program.command('start')
       process.on('SIGINT', () => server.kill('SIGINT'));
       process.on('SIGTERM', () => server.kill('SIGTERM'));
     } else {
-      const { spawn } = await import('node:child_process');
       const dataDir = resolve(root, 'data');
       mkdirSync(dataDir, { recursive: true });
       const logFile = resolve(dataDir, 'openhinge.log');
       const pidFile = resolve(dataDir, 'openhinge.pid');
       const out = openSync(logFile, 'a');
-      const server = spawn('node', [entry], {
+      const server = spawn('node', [finalEntry], {
         cwd: root,
         detached: true,
         stdio: ['ignore', out, out],
