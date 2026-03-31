@@ -595,6 +595,7 @@ providerCmd.command('add-claude')
       refresh_token: oauth.refreshToken || '',
       client_id: '9d1c250a-e61b-44d9-88ed-5944d1962f5e',
       expires_at: String(oauth.expiresAt || ''),
+      source: 'claude_code', // Never use OAuth refresh — read from Claude Code's credential store instead
     };
     const providerConfig = opts.model ? { default_model: opts.model } : {};
 

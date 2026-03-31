@@ -86,12 +86,18 @@ export class ClaudeProvider extends BaseProvider {
         if (raw) {
           const creds = JSON.parse(raw);
           const oauth = creds.claudeAiOauth;
-          if (oauth?.accessToken && oauth.accessToken !== this.config.credentials.oauth_token) {
-            this.config.credentials.oauth_token = oauth.accessToken;
-            if (oauth.refreshToken) this.config.credentials.refresh_token = oauth.refreshToken;
-            if (oauth.expiresAt) this.config.credentials.expires_at = String(oauth.expiresAt);
-            this.persistCredentials();
-            logger.info({ id: this.id }, 'Claude token refreshed from local credentials');
+          if (oauth?.accessToken) {
+            if (oauth.accessToken !== this.config.credentials.oauth_token) {
+              // New token from Claude Code — update ours
+              this.config.credentials.oauth_token = oauth.accessToken;
+              if (oauth.refreshToken) this.config.credentials.refresh_token = oauth.refreshToken;
+              if (oauth.expiresAt) this.config.credentials.expires_at = String(oauth.expiresAt);
+              this.persistCredentials();
+              logger.info({ id: this.id }, 'Claude token refreshed from local credentials');
+            } else {
+              logger.debug({ id: this.id }, 'Claude Code token unchanged — still valid');
+            }
+            // Either way, we got a token from Claude Code — don't fall through to OAuth refresh
             return true;
           }
         }
@@ -100,7 +106,14 @@ export class ClaudeProvider extends BaseProvider {
       }
     }
 
-    // Strategy 2: OAuth refresh_token flow — works on any platform
+    // Strategy 2: OAuth refresh_token flow — only for OpenHinge's own OAuth sessions
+    // NEVER use this for claude_code-sourced providers — calling the refresh endpoint
+    // rotates the refresh token and invalidates Claude Code's session (signs user out).
+    if (this.config.credentials.source === 'claude_code') {
+      logger.debug({ id: this.id }, 'Claude Code provider — skipping OAuth refresh to avoid invalidating Claude Code session');
+      return false;
+    }
+
     const refreshToken = this.config.credentials.refresh_token;
     const clientId = this.config.credentials.client_id;
     if (!refreshToken || !clientId) {

@@ -527,6 +527,7 @@ export async function providerAdminRoutes(app: FastifyInstance, config: Config):
             refresh_token: oauth.refreshToken || '',
             client_id: '9d1c250a-e61b-44d9-88ed-5944d1962f5e',
             expires_at: String(oauth.expiresAt || ''),
+            source: 'claude_code',
           };
           const provider = await createProviderFromToken('claude', oauth.accessToken, `Claude (${subType})`, 'oauth_token', extraCreds);
           authResult = { status: 'complete', provider };
