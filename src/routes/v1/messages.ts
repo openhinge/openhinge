@@ -94,13 +94,18 @@ function convertAnthropicMessages(msgs: AnthropicBody['messages']): ChatMessage[
         })),
       });
     } else if (toolResultParts.length > 0) {
-      // Tool results — content is in the `content` field, not `text`
+      // Tool results — keep them as consecutive tool messages
+      // claude.ts:convertMessages() will merge them back into one user message
       for (const tr of toolResultParts) {
         out.push({
           role: 'tool',
           content: extractToolResultContent(tr),
           tool_call_id: tr.tool_use_id,
         });
+      }
+      // Also include any text content alongside tool results (e.g. user commentary)
+      if (textParts) {
+        out.push({ role: msg.role as 'user' | 'assistant', content: textParts });
       }
     } else {
       out.push({ role: msg.role as 'user' | 'assistant', content: textParts });

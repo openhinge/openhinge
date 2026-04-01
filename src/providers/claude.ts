@@ -160,7 +160,8 @@ export class ClaudeProvider extends BaseProvider {
 
   private convertMessages(msgs: ChatRequest['messages']): any[] {
     const out: any[] = [];
-    for (const m of msgs) {
+    for (let i = 0; i < msgs.length; i++) {
+      const m = msgs[i];
       if (m.role === 'system') continue;
       if (m.role === 'assistant' && m.tool_calls?.length) {
         // Assistant message with tool calls → Anthropic format
@@ -173,8 +174,14 @@ export class ClaudeProvider extends BaseProvider {
         }
         out.push({ role: 'assistant', content });
       } else if (m.role === 'tool' && m.tool_call_id) {
-        // Tool result → Anthropic tool_result format
-        out.push({ role: 'user', content: [{ type: 'tool_result', tool_use_id: m.tool_call_id, content: m.content }] });
+        // Tool result — merge consecutive tool messages into one user message
+        // Claude requires ALL tool_results in a single user message after tool_use
+        const toolResults: any[] = [{ type: 'tool_result', tool_use_id: m.tool_call_id, content: m.content }];
+        while (i + 1 < msgs.length && msgs[i + 1].role === 'tool' && msgs[i + 1].tool_call_id) {
+          i++;
+          toolResults.push({ type: 'tool_result', tool_use_id: msgs[i].tool_call_id, content: msgs[i].content });
+        }
+        out.push({ role: 'user', content: toolResults });
       } else {
         out.push({ role: m.role, content: m.content });
       }
