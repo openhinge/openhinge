@@ -34,7 +34,7 @@ export async function providerAdminRoutes(app: FastifyInstance, config: Config):
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(id, name, type, base_url || null, JSON.stringify(provider_config || {}), encryptedCreds, priority || 0);
 
-    loadProviders(config.encryption.key);
+    await await loadProviders(config.encryption.key);
 
     reply.code(201).send({ id, name, type });
   });
@@ -67,14 +67,14 @@ export async function providerAdminRoutes(app: FastifyInstance, config: Config):
     values.push(id);
 
     getDb().prepare(`UPDATE providers SET ${sets.join(', ')} WHERE id = ?`).run(...values);
-    loadProviders(config.encryption.key);
+    await await loadProviders(config.encryption.key);
 
     return { ok: true };
   });
 
   app.delete<{ Params: { id: string } }>('/admin/providers/:id', async (request) => {
     getDb().prepare('DELETE FROM providers WHERE id = ?').run(request.params.id);
-    loadProviders(config.encryption.key);
+    await await loadProviders(config.encryption.key);
     return { ok: true };
   });
 
@@ -103,7 +103,7 @@ export async function providerAdminRoutes(app: FastifyInstance, config: Config):
         return reply.code(400).send({ error: `Unknown action: ${action}` });
     }
 
-    loadProviders(config.encryption.key);
+    await loadProviders(config.encryption.key);
     return { ok: true, affected };
   });
 
@@ -355,7 +355,7 @@ export async function providerAdminRoutes(app: FastifyInstance, config: Config):
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(id, providerName, type, baseUrl, JSON.stringify(providerConfig), encryptedCreds, priority || 50);
 
-    loadProviders(config.encryption.key);
+    await loadProviders(config.encryption.key);
 
     reply.code(201).send({ id, name: providerName, type, model: defaultModel });
   });
@@ -503,7 +503,7 @@ export async function providerAdminRoutes(app: FastifyInstance, config: Config):
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(id, provName, type, baseUrl, providerConfig, encCreds, 50);
 
-    loadProviders(config.encryption.key);
+    await loadProviders(config.encryption.key);
     return { id, name: provName, type, model: defaultModel };
   }
 

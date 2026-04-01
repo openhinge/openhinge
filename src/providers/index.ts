@@ -44,7 +44,44 @@ function decryptCredentials(encrypted: string, key: string): Record<string, stri
 
 let _refreshInterval: ReturnType<typeof setInterval> | null = null;
 
-export function loadProviders(encryptionKey: string): void {
+async function refreshAllTokens(): Promise<void> {
+  const db = getDb();
+  for (const [id, provider] of providers) {
+    try {
+      const creds = (provider as any).config?.credentials;
+      const providerType = (provider as any).type;
+
+      // Always attempt refresh for subscription tokens (reads from local credential store)
+      // and for any token expiring within 30 min
+      const isSubscription = creds?.oauth_token?.startsWith('sk-ant-oat01-') ||
+                             creds?.source === 'claude_code';
+      const expiresMs = creds?.expires_at ? Number(creds.expires_at) : 0;
+      const bufferMs = 30 * 60 * 1000;
+      const expiringOrUnknown = !creds?.expires_at || Date.now() + bufferMs >= expiresMs;
+
+      if (!isSubscription && !expiringOrUnknown) continue;
+
+      logger.info({ id, type: providerType }, 'Background token refresh');
+      const refreshed = await provider.refreshToken();
+      if (refreshed) {
+        db.prepare("UPDATE providers SET health_status = 'healthy' WHERE id = ?").run(id);
+      } else if (expiresMs > 0) {
+        const timeLeft = expiresMs - Date.now();
+        if (timeLeft <= 0) {
+          logger.error({ id, type: providerType }, 'Token expired and refresh failed — provider DOWN');
+          db.prepare("UPDATE providers SET health_status = 'down' WHERE id = ?").run(id);
+        } else {
+          logger.warn({ id, type: providerType, expiresInMin: Math.round(timeLeft / 60000) }, 'Token refresh failed — will retry');
+          db.prepare("UPDATE providers SET health_status = 'degraded' WHERE id = ?").run(id);
+        }
+      }
+    } catch (err: any) {
+      logger.error({ id, err: err.message }, 'Background refresh error');
+    }
+  }
+}
+
+export async function loadProviders(encryptionKey: string): Promise<void> {
   setEncryptionKey(encryptionKey);
   const db = getDb();
   const rows = db.prepare('SELECT * FROM providers WHERE is_enabled = 1 ORDER BY priority DESC').all();
@@ -59,41 +96,9 @@ export function loadProviders(encryptionKey: string): void {
     }
   }
 
-  // Start background token refresh — every 15 min, proactively refresh expiring tokens
-  // OAuth tokens (Claude, OpenAI, Gemini) typically expire in 1-8 hours.
-  // We refresh 30 min before expiry to avoid any request-time failures.
+  // Refresh all tokens immediately on load (awaited so callers get fresh tokens)
   if (_refreshInterval) clearInterval(_refreshInterval);
-  const refreshAllTokens = async () => {
-    for (const [id, provider] of providers) {
-      try {
-        const creds = (provider as any).config?.credentials;
-        if (!creds?.expires_at) continue;
-        const expiresMs = Number(creds.expires_at);
-        const bufferMs = 30 * 60 * 1000; // refresh 30 min before expiry
-        if (Date.now() + bufferMs >= expiresMs) {
-          logger.info({ id, type: (provider as any).type }, 'Background token refresh');
-          const refreshed = await provider.refreshToken();
-          if (refreshed) {
-            db.prepare("UPDATE providers SET health_status = 'healthy' WHERE id = ?").run(id);
-          } else {
-            // Token refresh failed — mark as degraded so dashboard shows warning
-            const timeLeft = expiresMs - Date.now();
-            if (timeLeft <= 0) {
-              logger.error({ id, type: (provider as any).type }, 'Token expired and refresh failed — provider DOWN');
-              db.prepare("UPDATE providers SET health_status = 'down' WHERE id = ?").run(id);
-            } else {
-              logger.warn({ id, type: (provider as any).type, expiresInMin: Math.round(timeLeft / 60000) }, 'Token refresh failed — will retry');
-              db.prepare("UPDATE providers SET health_status = 'degraded' WHERE id = ?").run(id);
-            }
-          }
-        }
-      } catch (err: any) {
-        logger.error({ id, err: err.message }, 'Background refresh error');
-      }
-    }
-  };
-  // Run immediately on startup, then every 15 min
-  refreshAllTokens();
+  await refreshAllTokens();
   _refreshInterval = setInterval(refreshAllTokens, 15 * 60 * 1000);
 }
 

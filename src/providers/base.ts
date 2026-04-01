@@ -53,7 +53,15 @@ export abstract class BaseProvider {
    */
   protected async ensureFreshToken(): Promise<void> {
     const expiresAt = this.config.credentials.expires_at;
-    if (!expiresAt) return;
+    if (!expiresAt) {
+      // No expiry tracked (e.g. Claude Code keychain import) — still try refresh
+      // for subscription tokens so we always have the latest from credential store
+      const token = this.config.credentials.oauth_token || this.config.credentials.api_key || '';
+      if (token.startsWith('sk-ant-oat01-') || this.config.credentials.source === 'claude_code') {
+        await this.refreshToken();
+      }
+      return;
+    }
 
     const expiresMs = Number(expiresAt);
     const bufferMs = 5 * 60 * 1000; // refresh 5 min before expiry

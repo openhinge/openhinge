@@ -768,7 +768,7 @@ providerCmd.command('health')
   .action(async () => {
     const config = loadConfig();
     initDatabase(config.db.path);
-    loadProviders(config.encryption.key);
+    await loadProviders(config.encryption.key);
     const results = await checkAllHealth(config.encryption.key);
     for (const [id, health] of results) {
       console.log(`${id}: ${health.status} (${health.latency_ms}ms) ${health.message || ''}`);

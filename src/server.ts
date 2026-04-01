@@ -26,8 +26,8 @@ export async function createServer(config: Config) {
   // Init database
   initDatabase(config.db.path);
 
-  // Load providers
-  loadProviders(config.encryption.key);
+  // Load providers (awaits initial token refresh so all tokens are fresh)
+  await loadProviders(config.encryption.key);
 
   // Create Fastify instance
   const app = Fastify({
