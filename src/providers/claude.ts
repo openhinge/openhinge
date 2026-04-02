@@ -46,71 +46,112 @@ export class ClaudeProvider extends BaseProvider {
 
   // Try reading fresh token from macOS Keychain first (like OpenClaw),
   // then fall back to OAuth refresh_token flow
+  private isTokenExpired(): boolean {
+    const expiresAt = this.config.credentials.expires_at;
+    if (!expiresAt) return false; // unknown expiry — assume valid
+    return Date.now() >= Number(expiresAt);
+  }
+
+  private async readLocalCredentials(): Promise<{ accessToken: string; refreshToken?: string; expiresAt?: number } | null> {
+    try {
+      let raw: string | undefined;
+      const { platform, homedir } = await import('node:os');
+      const { readFileSync, existsSync, readdirSync } = await import('node:fs');
+      const { resolve } = await import('node:path');
+
+      if (platform() === 'darwin') {
+        const { execSync } = await import('node:child_process');
+        try {
+          raw = execSync(
+            'security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null',
+            { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] },
+          ).trim();
+        } catch { /* Keychain not available */ }
+      }
+
+      if (!raw) {
+        const searchPaths: string[] = [];
+        if (process.env.CLAUDE_CONFIG_DIR) {
+          searchPaths.push(resolve(process.env.CLAUDE_CONFIG_DIR, '.credentials.json'));
+        }
+        searchPaths.push(resolve(homedir(), '.claude', '.credentials.json'));
+        searchPaths.push('/root/.claude/.credentials.json');
+        try { for (const u of readdirSync('/home')) searchPaths.push(`/home/${u}/.claude/.credentials.json`); } catch {}
+
+        for (const p of [...new Set(searchPaths)]) {
+          if (existsSync(p)) {
+            try { raw = readFileSync(p, 'utf-8'); break; } catch {}
+          }
+        }
+      }
+
+      if (!raw) return null;
+      const creds = JSON.parse(raw);
+      const oauth = creds.claudeAiOauth;
+      if (!oauth?.accessToken) return null;
+      return { accessToken: oauth.accessToken, refreshToken: oauth.refreshToken, expiresAt: oauth.expiresAt };
+    } catch {
+      return null;
+    }
+  }
+
+  private async writeBackToCredentialStore(accessToken: string, refreshToken: string, expiresAt: number): Promise<void> {
+    // Write refreshed token back to Claude Code's credential store so both stay in sync
+    try {
+      const { homedir } = await import('node:os');
+      const { readFileSync, writeFileSync, existsSync } = await import('node:fs');
+      const { resolve } = await import('node:path');
+
+      const paths = [
+        resolve(homedir(), '.claude', '.credentials.json'),
+        '/root/.claude/.credentials.json',
+      ];
+
+      for (const p of paths) {
+        if (!existsSync(p)) continue;
+        try {
+          const existing = JSON.parse(readFileSync(p, 'utf-8'));
+          if (existing.claudeAiOauth) {
+            existing.claudeAiOauth.accessToken = accessToken;
+            existing.claudeAiOauth.refreshToken = refreshToken;
+            existing.claudeAiOauth.expiresAt = expiresAt;
+            writeFileSync(p, JSON.stringify(existing, null, 2));
+            logger.info({ id: this.id, path: p }, 'Wrote refreshed token back to credential store');
+          }
+        } catch { /* best effort */ }
+      }
+    } catch { /* best effort */ }
+  }
+
   async refreshToken(): Promise<boolean> {
     // Strategy 1: Read fresh token from Claude Code's local credential store
-    // Searches: macOS Keychain, current user, root, /home/* users
-    if (this.isSubscription && this.config.credentials.client_id === '9d1c250a-e61b-44d9-88ed-5944d1962f5e') {
-      try {
-        let raw: string | undefined;
-        const { platform, homedir } = await import('node:os');
-        const { readFileSync, existsSync, readdirSync } = await import('node:fs');
-        const { resolve } = await import('node:path');
-
-        if (platform() === 'darwin') {
-          const { execSync } = await import('node:child_process');
-          try {
-            raw = execSync(
-              'security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null',
-              { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] },
-            ).trim();
-          } catch { /* Keychain not available */ }
+    if (this.isSubscription) {
+      const local = await this.readLocalCredentials();
+      if (local) {
+        if (local.accessToken !== this.config.credentials.oauth_token) {
+          // Different token found — use it (Claude Code refreshed it)
+          this.config.credentials.oauth_token = local.accessToken;
+          if (local.refreshToken) this.config.credentials.refresh_token = local.refreshToken;
+          if (local.expiresAt) this.config.credentials.expires_at = String(local.expiresAt);
+          this.persistCredentials();
+          logger.info({ id: this.id }, 'Claude token refreshed from local credentials');
+          return true;
         }
-
-        if (!raw) {
-          // Search multiple locations for .credentials.json
-          const searchPaths: string[] = [];
-          if (process.env.CLAUDE_CONFIG_DIR) {
-            searchPaths.push(resolve(process.env.CLAUDE_CONFIG_DIR, '.credentials.json'));
-          }
-          searchPaths.push(resolve(homedir(), '.claude', '.credentials.json'));
-          searchPaths.push('/root/.claude/.credentials.json');
-          try { for (const u of readdirSync('/home')) searchPaths.push(`/home/${u}/.claude/.credentials.json`); } catch {}
-
-          for (const p of [...new Set(searchPaths)]) {
-            if (existsSync(p)) {
-              try { raw = readFileSync(p, 'utf-8'); break; } catch {}
-            }
-          }
+        // Same token — only trust it if it's not expired
+        if (!this.isTokenExpired()) {
+          logger.debug({ id: this.id }, 'Claude Code token unchanged and still valid');
+          return true;
         }
-
-        if (raw) {
-          const creds = JSON.parse(raw);
-          const oauth = creds.claudeAiOauth;
-          if (oauth?.accessToken) {
-            if (oauth.accessToken !== this.config.credentials.oauth_token) {
-              // New token from Claude Code — update ours
-              this.config.credentials.oauth_token = oauth.accessToken;
-              if (oauth.refreshToken) this.config.credentials.refresh_token = oauth.refreshToken;
-              if (oauth.expiresAt) this.config.credentials.expires_at = String(oauth.expiresAt);
-              this.persistCredentials();
-              logger.info({ id: this.id }, 'Claude token refreshed from local credentials');
-            } else {
-              logger.debug({ id: this.id }, 'Claude Code token unchanged — still valid');
-            }
-            // Either way, we got a token from Claude Code — don't fall through to OAuth refresh
-            return true;
-          }
-        }
-      } catch {
-        // Claude Code not installed — fall through to OAuth
+        // Same token but expired — fall through to OAuth refresh
+        logger.warn({ id: this.id }, 'Credential store token is also expired — falling through to OAuth refresh');
       }
     }
 
-    // Strategy 2: OAuth refresh_token flow — only for OpenHinge's own OAuth sessions
-    // NEVER use this for claude_code-sourced providers — calling the refresh endpoint
-    // rotates the refresh token and invalidates Claude Code's session (signs user out).
-    if (this.config.credentials.source === 'claude_code') {
-      logger.debug({ id: this.id }, 'Claude Code provider — skipping OAuth refresh to avoid invalidating Claude Code session');
+    // Strategy 2: OAuth refresh_token flow
+    // For claude_code source: only refresh when token is actually expired (dead token anyway).
+    // For other sources: always allow refresh.
+    if (this.config.credentials.source === 'claude_code' && !this.isTokenExpired()) {
+      logger.debug({ id: this.id }, 'Claude Code provider — token still valid, skipping OAuth refresh');
       return false;
     }
 
@@ -122,6 +163,7 @@ export class ClaudeProvider extends BaseProvider {
     }
 
     try {
+      logger.info({ id: this.id, source: this.config.credentials.source }, 'Attempting OAuth token refresh');
       const res = await fetch('https://platform.claude.com/v1/oauth/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -142,8 +184,9 @@ export class ClaudeProvider extends BaseProvider {
       if (!data.access_token) return false;
 
       this.config.credentials.oauth_token = data.access_token;
-      if (data.expires_in) {
-        this.config.credentials.expires_at = String(Date.now() + data.expires_in * 1000);
+      const expiresAt = data.expires_in ? Date.now() + data.expires_in * 1000 : 0;
+      if (expiresAt) {
+        this.config.credentials.expires_at = String(expiresAt);
       }
       if (data.refresh_token) {
         this.config.credentials.refresh_token = data.refresh_token;
@@ -151,6 +194,12 @@ export class ClaudeProvider extends BaseProvider {
 
       this.persistCredentials();
       logger.info({ id: this.id }, 'Claude OAuth token refreshed successfully');
+
+      // Write back to credential store so Claude Code stays in sync
+      if (this.config.credentials.source === 'claude_code' && data.refresh_token && expiresAt) {
+        await this.writeBackToCredentialStore(data.access_token, data.refresh_token, expiresAt);
+      }
+
       return true;
     } catch (err: any) {
       logger.error({ id: this.id, err: err.message }, 'Claude OAuth refresh error');
