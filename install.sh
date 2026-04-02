@@ -165,7 +165,14 @@ echo -e "${GREEN}✓${RESET} OpenHinge installed successfully"
 echo ""
 
 # ── Kill existing instance if running ─────────────────────────
-EXISTING_PID=$(lsof -ti:3700 2>/dev/null || true)
+EXISTING_PID=""
+if command -v lsof &>/dev/null; then
+  EXISTING_PID=$(lsof -ti:3700 2>/dev/null || true)
+elif command -v fuser &>/dev/null; then
+  EXISTING_PID=$(fuser 3700/tcp 2>/dev/null || true)
+elif command -v ss &>/dev/null; then
+  EXISTING_PID=$(ss -tlnp 'sport = :3700' 2>/dev/null | grep -oP 'pid=\K[0-9]+' || true)
+fi
 if [ -n "$EXISTING_PID" ]; then
   echo -e "${YELLOW}!${RESET} Port 3700 in use — stopping existing instance (PID $EXISTING_PID)"
   kill $EXISTING_PID 2>/dev/null || true
@@ -177,6 +184,17 @@ echo -e "${CYAN}→${RESET} Starting OpenHinge..."
 echo ""
 
 # Open browser after a short delay (background)
-(sleep 3 && open "http://localhost:3700" 2>/dev/null || xdg-open "http://localhost:3700" 2>/dev/null) &
+open_browser() {
+  sleep 3
+  if [ "$OS" = "Darwin" ]; then
+    open "http://localhost:3700" 2>/dev/null
+  elif grep -qi microsoft /proc/version 2>/dev/null; then
+    # WSL — use Windows browser
+    cmd.exe /c start "http://localhost:3700" 2>/dev/null || powershell.exe -c 'Start-Process "http://localhost:3700"' 2>/dev/null
+  else
+    xdg-open "http://localhost:3700" 2>/dev/null
+  fi
+}
+open_browser &
 
 npm start
