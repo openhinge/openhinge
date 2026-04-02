@@ -75,6 +75,11 @@ export class ClaudeProvider extends BaseProvider {
           searchPaths.push(resolve(process.env.CLAUDE_CONFIG_DIR, '.credentials.json'));
         }
         searchPaths.push(resolve(homedir(), '.claude', '.credentials.json'));
+        // Windows: %APPDATA%\.claude
+        if (process.env.APPDATA) {
+          searchPaths.push(resolve(process.env.APPDATA, '.claude', '.credentials.json'));
+        }
+        // Linux: root and /home/* users
         searchPaths.push('/root/.claude/.credentials.json');
         try { for (const u of readdirSync('/home')) searchPaths.push(`/home/${u}/.claude/.credentials.json`); } catch {}
 
@@ -106,6 +111,9 @@ export class ClaudeProvider extends BaseProvider {
         resolve(homedir(), '.claude', '.credentials.json'),
         '/root/.claude/.credentials.json',
       ];
+      if (process.env.APPDATA) {
+        paths.push(resolve(process.env.APPDATA, '.claude', '.credentials.json'));
+      }
 
       for (const p of paths) {
         if (!existsSync(p)) continue;
