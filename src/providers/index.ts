@@ -102,6 +102,13 @@ export async function loadProviders(encryptionKey: string): Promise<void> {
   _refreshInterval = setInterval(refreshAllTokens, 15 * 60 * 1000);
 }
 
+export function stopBackgroundRefresh(): void {
+  if (_refreshInterval) {
+    clearInterval(_refreshInterval);
+    _refreshInterval = null;
+  }
+}
+
 export function getProvider(id: string): BaseProvider | undefined {
   return providers.get(id);
 }

@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { Command } from 'commander';
 import { loadConfig } from '../src/config/index.js';
 import { initDatabase, getDb, closeDatabase } from '../src/db/index.js';
-import { loadProviders, getAllProviders, checkAllHealth } from '../src/providers/index.js';
+import { loadProviders, getAllProviders, checkAllHealth, stopBackgroundRefresh } from '../src/providers/index.js';
 import { encrypt } from '../src/utils/crypto.js';
 import { generateId } from '../src/utils/crypto.js';
 import * as souls from '../src/souls/repository.js';
@@ -842,6 +842,7 @@ providerCmd.command('health')
     for (const [id, health] of results) {
       console.log(`${id}: ${health.status} (${health.latency_ms}ms) ${health.message || ''}`);
     }
+    stopBackgroundRefresh();
     closeDatabase();
   });
 
