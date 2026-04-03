@@ -44,12 +44,42 @@ export class ClaudeProvider extends BaseProvider {
     return 'claude-sonnet-4-6';
   }
 
-  // Try reading fresh token from macOS Keychain first (like OpenClaw),
-  // then fall back to OAuth refresh_token flow
   private isTokenExpired(): boolean {
     const expiresAt = this.config.credentials.expires_at;
     if (!expiresAt) return false; // unknown expiry — assume valid
     return Date.now() >= Number(expiresAt);
+  }
+
+  /**
+   * Like OpenClaw: read fresh credentials from disk on EVERY request.
+   * This ensures we always use the latest token, even if Claude Code
+   * refreshed it in the background.
+   */
+  protected override async ensureFreshToken(): Promise<void> {
+    if (this.isSubscription) {
+      const local = await this.readLocalCredentials();
+      if (local?.accessToken && local.accessToken !== this.config.credentials.oauth_token) {
+        this.config.credentials.oauth_token = local.accessToken;
+        if (local.refreshToken) this.config.credentials.refresh_token = local.refreshToken;
+        if (local.expiresAt) this.config.credentials.expires_at = String(local.expiresAt);
+        // Persist so background refresh and DB stay in sync
+        this.persistCredentials();
+        logger.info({ id: this.id }, 'Picked up fresh token from credential store');
+        return; // fresh token — no further refresh needed
+      }
+    }
+
+    // Fall back to expiry-based refresh for non-subscription or when credential store
+    // didn't have a newer token
+    const expiresAt = this.config.credentials.expires_at;
+    if (expiresAt) {
+      const expiresMs = Number(expiresAt);
+      const bufferMs = 5 * 60 * 1000;
+      if (Date.now() + bufferMs >= expiresMs) {
+        logger.info({ id: this.id, type: this.type }, 'Token expiring soon, proactively refreshing');
+        await this.refreshToken();
+      }
+    }
   }
 
   private async readLocalCredentials(): Promise<{ accessToken: string; refreshToken?: string; expiresAt?: number } | null> {
@@ -132,34 +162,23 @@ export class ClaudeProvider extends BaseProvider {
   }
 
   async refreshToken(): Promise<boolean> {
-    // Strategy 1: Read fresh token from Claude Code's local credential store
+    // Strategy 1: Read fresh token from credential store (called on 401 or background timer)
     if (this.isSubscription) {
       const local = await this.readLocalCredentials();
-      if (local) {
-        if (local.accessToken !== this.config.credentials.oauth_token) {
-          // Different token found — use it (Claude Code refreshed it)
-          this.config.credentials.oauth_token = local.accessToken;
-          if (local.refreshToken) this.config.credentials.refresh_token = local.refreshToken;
-          if (local.expiresAt) this.config.credentials.expires_at = String(local.expiresAt);
-          this.persistCredentials();
-          logger.info({ id: this.id }, 'Claude token refreshed from local credentials');
-          return true;
-        }
-        // Same token — only trust it if it's not expired
-        if (!this.isTokenExpired()) {
-          logger.debug({ id: this.id }, 'Claude Code token unchanged and still valid');
-          return true;
-        }
-        // Same token but expired — fall through to OAuth refresh
-        logger.warn({ id: this.id }, 'Credential store token is also expired — falling through to OAuth refresh');
+      if (local && local.accessToken !== this.config.credentials.oauth_token) {
+        this.config.credentials.oauth_token = local.accessToken;
+        if (local.refreshToken) this.config.credentials.refresh_token = local.refreshToken;
+        if (local.expiresAt) this.config.credentials.expires_at = String(local.expiresAt);
+        this.persistCredentials();
+        logger.info({ id: this.id }, 'Claude token refreshed from local credentials');
+        return true;
       }
+      // Credential store has same token or is unavailable — try OAuth refresh
     }
 
     // Strategy 2: OAuth refresh_token flow
-    // For claude_code source: only refresh when token is actually expired (dead token anyway).
-    // For other sources: always allow refresh.
+    // For claude_code source: only when token is expired (avoid unnecessary rotation).
     if (this.config.credentials.source === 'claude_code' && !this.isTokenExpired()) {
-      logger.debug({ id: this.id }, 'Claude Code provider — token still valid, skipping OAuth refresh');
       return false;
     }
 
