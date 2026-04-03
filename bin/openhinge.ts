@@ -461,6 +461,8 @@ providerCmd.command('add-claude')
   .option('-m, --model <model>', 'Default model')
   .option('-p, --priority <n>', 'Priority (higher = preferred)', '10')
   .option('--token <token>', 'Paste exported token (from: openhinge provider export-claude)')
+  .option('--timeout <ms>', 'Request timeout in ms (default: 120000)')
+  .option('--stream-timeout <ms>', 'Stream first-chunk timeout in ms (default: 60000)')
   .action(async (opts) => {
     const { execSync } = await import('node:child_process');
     const { readFileSync, existsSync, readdirSync } = await import('node:fs');
@@ -584,6 +586,53 @@ providerCmd.command('add-claude')
       process.exit(1);
     }
 
+    // Check if token is expired and try to refresh before adding
+    const tokenExpired = oauth.expiresAt && Date.now() >= Number(oauth.expiresAt);
+    if (tokenExpired && oauth.refreshToken) {
+      console.log('Token expired — attempting OAuth refresh...');
+      try {
+        const res = await fetch('https://platform.claude.com/v1/oauth/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            grant_type: 'refresh_token',
+            refresh_token: oauth.refreshToken,
+            client_id: '9d1c250a-e61b-44d9-88ed-5944d1962f5e',
+            scope: 'user:profile user:inference',
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json() as any;
+          if (data.access_token) {
+            oauth.accessToken = data.access_token;
+            if (data.refresh_token) oauth.refreshToken = data.refresh_token;
+            if (data.expires_in) oauth.expiresAt = Date.now() + data.expires_in * 1000;
+            console.log('Token refreshed successfully.');
+          }
+        } else {
+          console.error('');
+          console.error('Token expired and refresh failed. The refresh token is dead.');
+          console.error('');
+          console.error('Fix: Re-login Claude Code on this machine:');
+          console.error('  claude');
+          console.error('  /login');
+          console.error('  openhinge provider add-claude');
+          console.error('');
+          console.error('Or export a fresh token from another machine:');
+          console.error('  openhinge provider export-claude');
+          process.exit(1);
+        }
+      } catch (err: any) {
+        console.error(`OAuth refresh error: ${err.message}`);
+        process.exit(1);
+      }
+    } else if (tokenExpired) {
+      console.error('');
+      console.error('Token expired and no refresh token available.');
+      console.error('Re-login Claude Code: claude → /login');
+      process.exit(1);
+    }
+
     const config = loadConfig();
     initDatabase(config.db.path);
 
@@ -597,7 +646,10 @@ providerCmd.command('add-claude')
       expires_at: String(oauth.expiresAt || ''),
       source: 'claude_code', // Never use OAuth refresh — read from Claude Code's credential store instead
     };
-    const providerConfig = opts.model ? { default_model: opts.model } : {};
+    const providerConfig: Record<string, unknown> = {};
+    if (opts.model) providerConfig.default_model = opts.model;
+    if (opts.timeout) providerConfig.timeout_ms = parseInt(opts.timeout);
+    if (opts.streamTimeout) providerConfig.stream_timeout_ms = parseInt(opts.streamTimeout);
 
     getDb().prepare(`
       INSERT INTO providers (id, name, type, base_url, config, credentials, priority)
