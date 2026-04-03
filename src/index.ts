@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { loadConfig } from './config/index.js';
 import { createServer } from './server.js';
 import { closeDatabase } from './db/index.js';
+import { stopBackgroundRefresh } from './providers/index.js';
 import { logger } from './utils/logger.js';
 
 // Set version from package.json once at startup
@@ -29,6 +30,7 @@ async function main() {
   // Graceful shutdown
   const shutdown = async (signal: string) => {
     logger.info({ signal }, 'Shutting down...');
+    stopBackgroundRefresh();
     await server.close();
     closeDatabase();
     process.exit(0);
