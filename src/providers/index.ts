@@ -65,6 +65,15 @@ async function refreshAllTokens(): Promise<void> {
       const refreshed = await provider.refreshToken();
       if (refreshed) {
         db.prepare("UPDATE providers SET health_status = 'healthy' WHERE id = ?").run(id);
+      } else if (isSubscription) {
+        // claude_code providers: refreshToken() only reads from disk, never does OAuth.
+        // Don't mark as DOWN — the token will be re-read on next request.
+        // Just re-check expiry after the disk sync.
+        const newExpiry = creds?.expires_at ? Number(creds.expires_at) : 0;
+        if (newExpiry > 0 && Date.now() >= newExpiry) {
+          logger.warn({ id, type: providerType }, 'Credential store token expired — waiting for Claude Code to refresh');
+          db.prepare("UPDATE providers SET health_status = 'degraded' WHERE id = ?").run(id);
+        }
       } else if (expiresMs > 0) {
         const timeLeft = expiresMs - Date.now();
         if (timeLeft <= 0) {

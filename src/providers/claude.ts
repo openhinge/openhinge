@@ -85,10 +85,12 @@ export class ClaudeProvider extends BaseProvider {
         // If the synced token is still valid, we're done
         if (!this.isTokenExpired()) return;
 
-        // Token from credential store is expired — do OAuth refresh with the
-        // (potentially fresh) refresh_token we just synced
-        logger.info({ id: this.id }, 'Credential store token expired — attempting OAuth refresh');
-        await this.doOAuthRefresh();
+        // Token from credential store is also expired — but NEVER do OAuth
+        // refresh for claude_code source. Consuming the refresh_token here
+        // would invalidate Claude Code's copy and force re-login.
+        // Just use the expired token — Claude Code will refresh it shortly,
+        // and the next request will pick up the fresh token.
+        logger.warn({ id: this.id }, 'Credential store token expired — waiting for Claude Code to refresh (not consuming refresh_token)');
         return;
       }
     }
@@ -262,12 +264,14 @@ export class ClaudeProvider extends BaseProvider {
       }
     }
 
-    // OAuth refresh — use the (potentially just-synced) refresh_token
-    // For claude_code source: only when token is expired (avoid unnecessary rotation).
-    if (this.config.credentials.source === 'claude_code' && !this.isTokenExpired()) {
+    // For claude_code source: NEVER do OAuth refresh. Consuming the
+    // refresh_token would invalidate Claude Code's copy → forced re-login.
+    // Let Claude Code handle its own token refresh; we just read from disk.
+    if (this.config.credentials.source === 'claude_code') {
       return false;
     }
 
+    // Non-claude_code: do OAuth refresh
     return this.doOAuthRefresh();
   }
 
