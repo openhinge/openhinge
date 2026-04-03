@@ -764,6 +764,75 @@ providerCmd.command('refresh-claude')
     closeDatabase();
   });
 
+providerCmd.command('update')
+  .description('Update a provider')
+  .requiredOption('--id <id>', 'Provider ID')
+  .option('-n, --name <name>', 'New name')
+  .option('-p, --priority <n>', 'New priority')
+  .option('-m, --model <model>', 'Default model')
+  .option('--enable', 'Enable provider')
+  .option('--disable', 'Disable provider')
+  .option('--timeout <ms>', 'Request timeout in ms')
+  .option('--stream-timeout <ms>', 'Stream first-chunk timeout in ms')
+  .action((opts) => {
+    const config = loadConfig();
+    initDatabase(config.db.path);
+    const db = getDb();
+
+    const existing = db.prepare('SELECT * FROM providers WHERE id = ?').get(opts.id) as any;
+    if (!existing) {
+      console.error(`Provider not found: ${opts.id}`);
+      process.exit(1);
+    }
+
+    const sets: string[] = [];
+    const values: unknown[] = [];
+
+    if (opts.name) { sets.push('name = ?'); values.push(opts.name); }
+    if (opts.priority) { sets.push('priority = ?'); values.push(parseInt(opts.priority)); }
+    if (opts.enable) { sets.push('is_enabled = 1'); }
+    if (opts.disable) { sets.push('is_enabled = 0'); }
+
+    // Merge config updates
+    if (opts.model || opts.timeout || opts.streamTimeout) {
+      const existingConfig = JSON.parse(existing.config || '{}');
+      if (opts.model) existingConfig.default_model = opts.model;
+      if (opts.timeout) existingConfig.timeout_ms = parseInt(opts.timeout);
+      if (opts.streamTimeout) existingConfig.stream_timeout_ms = parseInt(opts.streamTimeout);
+      sets.push('config = ?'); values.push(JSON.stringify(existingConfig));
+    }
+
+    if (sets.length === 0) {
+      console.error('Nothing to update. Use --name, --priority, --model, --enable, --disable, --timeout, or --stream-timeout');
+      process.exit(1);
+    }
+
+    sets.push("updated_at = datetime('now')");
+    values.push(opts.id);
+    db.prepare(`UPDATE providers SET ${sets.join(', ')} WHERE id = ?`).run(...values);
+    console.log(`Provider updated: ${existing.name} (${opts.id})`);
+    closeDatabase();
+  });
+
+providerCmd.command('delete')
+  .description('Delete a provider')
+  .requiredOption('--id <id>', 'Provider ID')
+  .action((opts) => {
+    const config = loadConfig();
+    initDatabase(config.db.path);
+    const db = getDb();
+
+    const existing = db.prepare('SELECT name FROM providers WHERE id = ?').get(opts.id) as any;
+    if (!existing) {
+      console.error(`Provider not found: ${opts.id}`);
+      process.exit(1);
+    }
+
+    db.prepare('DELETE FROM providers WHERE id = ?').run(opts.id);
+    console.log(`Provider deleted: ${existing.name} (${opts.id})`);
+    closeDatabase();
+  });
+
 providerCmd.command('health')
   .action(async () => {
     const config = loadConfig();
@@ -849,6 +918,42 @@ keyCmd.command('create')
     console.log(`API key created: ${key.name} (${opts.format} format)`);
     console.log(`Key: ${key.key}`);
     console.log('Save this key — it will not be shown again.');
+    closeDatabase();
+  });
+
+keyCmd.command('delete')
+  .description('Delete an API key')
+  .requiredOption('--id <id>', 'Key ID')
+  .action((opts) => {
+    const config = loadConfig();
+    initDatabase(config.db.path);
+
+    const existing = keys.getKeyById(opts.id);
+    if (!existing) {
+      console.error(`Key not found: ${opts.id}`);
+      process.exit(1);
+    }
+
+    keys.deleteKey(opts.id);
+    console.log(`Key deleted: ${existing.name} (${opts.id})`);
+    closeDatabase();
+  });
+
+keyCmd.command('revoke')
+  .description('Revoke an API key (can be reactivated later)')
+  .requiredOption('--id <id>', 'Key ID')
+  .action((opts) => {
+    const config = loadConfig();
+    initDatabase(config.db.path);
+
+    const existing = keys.getKeyById(opts.id);
+    if (!existing) {
+      console.error(`Key not found: ${opts.id}`);
+      process.exit(1);
+    }
+
+    keys.revokeKey(opts.id);
+    console.log(`Key revoked: ${existing.name} (${opts.id})`);
     closeDatabase();
   });
 
@@ -978,8 +1083,50 @@ connectCmd.command('openclaw')
 
 // Status command
 program.command('status')
-  .description('Show system status')
-  .action(() => {
+  .description('Show system status and whether the server is running')
+  .action(async () => {
+    const { resolve } = await import('node:path');
+    const { readFileSync, existsSync } = await import('node:fs');
+    const { execSync } = await import('node:child_process');
+
+    let root = resolve(__dirname, '..');
+    if (!existsSync(resolve(root, 'package.json'))) root = resolve(root, '..');
+    const pidFile = resolve(root, 'data/openhinge.pid');
+
+    // Check if server is running
+    let running = false;
+    let serverPid = '';
+
+    if (existsSync(pidFile)) {
+      const pid = readFileSync(pidFile, 'utf-8').trim();
+      try {
+        process.kill(parseInt(pid), 0); // signal 0 = check if alive
+        running = true;
+        serverPid = pid;
+      } catch { /* stale PID */ }
+    }
+
+    // Fallback: check port 3700
+    if (!running) {
+      try {
+        let portCheck = '';
+        try { portCheck = execSync('lsof -ti:3700 2>/dev/null', { encoding: 'utf-8' }).trim(); } catch {}
+        if (!portCheck) try { portCheck = execSync('fuser 3700/tcp 2>/dev/null', { encoding: 'utf-8' }).trim(); } catch {}
+        if (portCheck) {
+          running = true;
+          serverPid = portCheck.split('\n')[0];
+        }
+      } catch {}
+    }
+
+    // Also check via HTTP
+    if (!running) {
+      try {
+        const res = await fetch('http://127.0.0.1:3700/health', { signal: AbortSignal.timeout(2000) });
+        if (res.ok) running = true;
+      } catch {}
+    }
+
     const config = loadConfig();
     initDatabase(config.db.path);
     const db = getDb();
@@ -990,13 +1137,22 @@ program.command('status')
     const totalReqs = (db.prepare('SELECT COUNT(*) as c FROM usage_logs').get() as any).c;
     const todayReqs = (db.prepare("SELECT COUNT(*) as c FROM usage_logs WHERE created_at >= date('now')").get() as any).c;
 
+    console.log('');
     console.log('OpenHinge Status');
-    console.log('================');
+    console.log('════════════════');
+    if (running) {
+      console.log(`Server:       \x1b[32mrunning\x1b[0m${serverPid ? ` (PID ${serverPid})` : ''}`);
+      console.log(`Dashboard:    http://localhost:3700`);
+    } else {
+      console.log(`Server:       \x1b[31mstopped\x1b[0m`);
+      console.log(`              Run: openhinge start`);
+    }
     console.log(`Providers:    ${providerCount}`);
     console.log(`Souls:        ${soulCount}`);
     console.log(`API Keys:     ${keyCount}`);
     console.log(`Total Reqs:   ${totalReqs}`);
     console.log(`Today Reqs:   ${todayReqs}`);
+    console.log('');
 
     closeDatabase();
   });
