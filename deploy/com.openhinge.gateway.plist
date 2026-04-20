@@ -14,8 +14,18 @@
   <string>/path/to/openhinge</string>
   <key>RunAtLoad</key>
   <true/>
+  <!-- Daemon policy: restart on crash or abnormal exit, but not on clean
+       shutdown (SIGTERM via `openhinge stop`). ThrottleInterval=30 prevents
+       crash-loop amplification that killed OpenClaw under port exhaustion. -->
   <key>KeepAlive</key>
-  <true/>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+    <key>Crashed</key>
+    <true/>
+  </dict>
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
   <key>StandardOutPath</key>
   <string>/path/to/openhinge/data/stdout.log</string>
   <key>StandardErrorPath</key>
@@ -24,6 +34,8 @@
   <dict>
     <key>NODE_ENV</key>
     <string>production</string>
+    <key>NODE_OPTIONS</key>
+    <string>--unhandled-rejections=warn</string>
   </dict>
 </dict>
 </plist>

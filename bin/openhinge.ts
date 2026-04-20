@@ -266,6 +266,11 @@ program.command('startup')
 
       mkdirSync(plistDir, { recursive: true });
       const logFile = resolve(root, 'data/openhinge.log');
+      // KeepAlive as dict: respawn only on crash or abnormal exit, never
+      // on clean SIGTERM (so `openhinge stop` actually stops).
+      // ThrottleInterval=30 prevents crash-loop amplification.
+      // NODE_OPTIONS=--unhandled-rejections=warn is a belt-and-suspenders
+      // fallback — we already install process.on handlers in src/index.ts.
       const plist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -282,11 +287,25 @@ program.command('startup')
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
-  <true/>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+    <key>Crashed</key>
+    <true/>
+  </dict>
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
   <key>StandardOutPath</key>
   <string>${logFile}</string>
   <key>StandardErrorPath</key>
   <string>${logFile}</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>NODE_ENV</key>
+    <string>production</string>
+    <key>NODE_OPTIONS</key>
+    <string>--unhandled-rejections=warn</string>
+  </dict>
 </dict>
 </plist>`;
 

@@ -21,6 +21,28 @@ function findPkg(start: string): string {
 const pkg = JSON.parse(readFileSync(findPkg(__dirname), 'utf-8'));
 process.env.OPENHINGE_VERSION = pkg.version;
 
+// Resilience: log-and-continue for any uncaught async error. Node 15+
+// defaults to terminating the process on unhandledRejection; OpenClaw
+// learned that lesson the hard way. Preserve liveness; let upstream
+// request handlers surface the actual error to the client.
+process.on('unhandledRejection', (reason, promise) => {
+  try {
+    logger.error(
+      { reason: reason instanceof Error ? { msg: reason.message, stack: reason.stack } : reason },
+      'unhandledRejection — suppressed to keep daemon alive'
+    );
+  } catch {}
+});
+
+process.on('uncaughtException', (err) => {
+  try {
+    logger.error(
+      { err: { msg: err.message, stack: err.stack } },
+      'uncaughtException — suppressed to keep daemon alive'
+    );
+  } catch {}
+});
+
 async function main() {
   logger.info({ version: pkg.version }, 'Starting OpenHinge AI Gateway...');
 
