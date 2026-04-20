@@ -48,22 +48,37 @@ export class OpenAIProvider extends BaseProvider {
   // Refresh OpenAI OAuth token — try Codex auth file first, then OAuth flow
   async refreshToken(): Promise<boolean> {
     // Strategy 1: Read from ~/.codex/auth.json (Codex keeps this fresh)
+    // If we successfully read the file, treat this as a completed refresh —
+    // either we sync'd a new token, or the existing one is already current.
+    // Either way DO NOT fall through to Strategy 2, which would consume the
+    // refresh_token and log the user out of the Codex CLI. Same failure
+    // mode as the Claude 'claude_code' source guard.
     try {
       const { readFileSync } = await import('node:fs');
       const { join } = await import('node:path');
       const { homedir } = await import('node:os');
       const codexAuth = JSON.parse(readFileSync(join(homedir(), '.codex', 'auth.json'), 'utf-8'));
-      if (codexAuth.tokens?.access_token && codexAuth.tokens.access_token !== this.config.credentials.oauth_token) {
-        this.config.credentials.oauth_token = codexAuth.tokens.access_token;
-        if (codexAuth.tokens.refresh_token) this.config.credentials.refresh_token = codexAuth.tokens.refresh_token;
-        this.config.credentials.expires_at = String(Date.now() + 3600 * 1000);
-        this.persistCredentials();
-        logger.info({ id: this.id }, 'OpenAI token refreshed from Codex auth file');
+      if (codexAuth.tokens?.access_token) {
+        if (codexAuth.tokens.access_token !== this.config.credentials.oauth_token) {
+          this.config.credentials.oauth_token = codexAuth.tokens.access_token;
+          if (codexAuth.tokens.refresh_token) this.config.credentials.refresh_token = codexAuth.tokens.refresh_token;
+          this.config.credentials.expires_at = String(Date.now() + 3600 * 1000);
+          this.persistCredentials();
+          logger.info({ id: this.id }, 'OpenAI token refreshed from Codex auth file');
+        }
+        // Source-based hard guard: if the provider was imported from Codex
+        // (source === 'codex'), never do OAuth refresh_token flow. Codex
+        // manages its own tokens; we just read them.
+        if (this.config.credentials.source === 'codex') {
+          return true;
+        }
+        // No source field set (legacy row) but Codex file is present and
+        // readable: treat as Codex-managed too. Fail safe over fail open.
         return true;
       }
-    } catch { /* Codex not installed or no auth file */ }
+    } catch { /* Codex not installed or no auth file — fall through */ }
 
-    // Strategy 2: OAuth refresh_token flow
+    // Strategy 2: OAuth refresh_token flow (non-Codex OpenAI providers only)
     const refreshToken = this.config.credentials.refresh_token;
     const clientId = this.config.credentials.client_id;
     if (!refreshToken || !clientId) return false;
