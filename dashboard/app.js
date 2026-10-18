@@ -110,7 +110,7 @@ const OS = (() => {
 
   // ===== Navigation =====
   const titles = {
-    dashboard: 'Dashboard', providers: 'Providers', souls: 'Souls',
+    dashboard: 'Dashboard', playground: 'Playground', providers: 'Providers', souls: 'Souls',
     keys: 'API Keys', usage: 'Usage', logs: 'Request Logs',
     cloudflare: 'Cloudflare', settings: 'Settings', docs: 'Documentation',
   };
@@ -651,7 +651,7 @@ const OS = (() => {
         </tr></thead>
         <tbody>${data.map(l => `<tr class="log-row" onclick="OS.logDetail('${h(l.request_id || '')}')">
           <td class="text-muted text-sm" style="white-space:nowrap">${ago(l.created_at)}</td>
-          <td class="text-sm">${h(l.key_name || '—')}</td>
+          <td class="text-sm">${h(l.key_name || (l.api_key_id === 'playground' ? 'Playground' : '—'))}</td>
           <td><code class="text-sm">${h(l.soul_name || '—')}</code></td>
           <td class="text-sm">${h(l.provider_name || '—')}</td>
           <td class="text-mono text-sm truncate" style="max-width:140px">${h(l.model)}</td>
@@ -2548,6 +2548,309 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
     } catch { toast('Could not connect', 'error'); }
   }
 
+  // -- Playground --
+  // Settings are kept as strings straight from the inputs; the chat survives page switches
+  const _pg = { target: '', model: '', system: '', temperature: '', max_tokens: '', stream: true, messages: [], busy: false, abort: null };
+  const _pgModels = {}; // provider id -> { default_model, models }
+
+  loaders.playground = async () => {
+    const [souls, providers] = await Promise.all([loadSoulsList(), loadProvidersList()]);
+    const el = document.getElementById('page-playground');
+    const enabled = providers.filter(p => p.is_enabled);
+    if (!pgTargetInfo(_pg.target)) _pg.target = '';
+
+    const opt = (value, label) => `<option value="${h(value)}" ${_pg.target === value ? 'selected' : ''}>${h(label)}</option>`;
+    el.innerHTML = `
+      <div class="section-header">
+        <div><h2>Playground</h2><p>Chat with a provider or soul to test it. Requests are logged under the key "Playground".</p></div>
+        <button class="btn btn-secondary btn-sm" onclick="OS.pgClear()">Clear chat</button>
+      </div>
+      <div class="pg-layout">
+        <div class="card pg-settings">
+          <div class="form-group">
+            <label class="form-label" for="pg-target">Send to</label>
+            <select id="pg-target" onchange="OS.pgSetTarget(this.value)">
+              ${opt('', 'Gateway default')}
+              ${souls.length ? `<optgroup label="Souls">${souls.map(s => opt('soul:' + s.id, s.name)).join('')}</optgroup>` : ''}
+              ${enabled.length ? `<optgroup label="Providers (no fallback)">${enabled.map(p => opt('provider:' + p.id, `${p.name} (${p.type})`)).join('')}</optgroup>` : ''}
+            </select>
+            <p class="form-hint" id="pg-target-hint"></p>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="pg-model">Model</label>
+            <input id="pg-model" class="input-mono" list="pg-model-list" autocomplete="off" value="${h(_pg.model)}" oninput="OS.pgSet('model', this.value)" placeholder="Provider default">
+            <datalist id="pg-model-list"></datalist>
+            <p class="form-hint" id="pg-model-hint">Any model id works; the list is only suggestions.</p>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="pg-system">System prompt</label>
+            <textarea id="pg-system" rows="5" oninput="OS.pgSet('system', this.value)" placeholder="None">${h(_pg.system)}</textarea>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="pg-temperature">Temperature</label>
+              <input id="pg-temperature" type="number" step="0.1" min="0" max="2" value="${h(_pg.temperature)}" oninput="OS.pgSet('temperature', this.value)" placeholder="Default">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="pg-max-tokens">Max tokens</label>
+              <input id="pg-max-tokens" type="number" step="1" min="1" value="${h(_pg.max_tokens)}" oninput="OS.pgSet('max_tokens', this.value)" placeholder="Default">
+            </div>
+          </div>
+          <label class="pg-check"><input type="checkbox" ${_pg.stream ? 'checked' : ''} onchange="OS.pgSet('stream', this.checked)"> Stream the reply</label>
+        </div>
+        <div class="card pg-chat">
+          <div class="pg-transcript" id="pg-transcript"></div>
+          <div class="pg-composer">
+            <textarea id="pg-input" rows="2" placeholder="Message (Enter to send, Shift+Enter for a new line)" onkeydown="OS.pgKey(event)"></textarea>
+            <button class="btn btn-primary" id="pg-send" onclick="OS.pgSend()">Send</button>
+          </div>
+        </div>
+      </div>
+    `;
+    pgRenderTranscript();
+    pgSetBusy(_pg.busy);
+    pgShowTarget(false);
+  };
+
+  // What a target value points at, or null if that soul/provider is gone
+  function pgTargetInfo(target) {
+    const enabled = _providers.filter(p => p.is_enabled);
+    if (!target) return { kind: 'default', provider: enabled[0] };
+    const [kind, id] = target.split(':');
+    if (kind === 'soul') {
+      const soul = _souls.find(s => s.id === id);
+      if (!soul) return null;
+      return { kind, soul, provider: enabled.find(p => p.id === soul.provider_id) || enabled[0] };
+    }
+    const provider = enabled.find(p => p.id === id);
+    return provider ? { kind: 'provider', provider } : null;
+  }
+
+  async function pgShowTarget(prefill) {
+    const info = pgTargetInfo(_pg.target);
+    const hint = document.getElementById('pg-target-hint');
+    if (!info || !hint) return;
+
+    if (info.kind === 'default') {
+      hint.textContent = info.provider
+        ? `Routed like /v1/chat/completions with no soul: to ${info.provider.name}, the top-priority provider.`
+        : 'No enabled providers yet. Add one on the Providers page.';
+    } else if (info.kind === 'soul') {
+      hint.textContent = `Uses this soul's provider, fallback chain and settings, as /v1/souls/${info.soul.slug}/chat/completions does.`;
+      if (prefill) {
+        _pg.system = info.soul.system_prompt || '';
+        _pg.model = info.soul.model || '';
+        _pg.temperature = info.soul.temperature != null ? String(info.soul.temperature) : '';
+        _pg.max_tokens = info.soul.max_tokens != null ? String(info.soul.max_tokens) : '';
+        document.getElementById('pg-system').value = _pg.system;
+        document.getElementById('pg-model').value = _pg.model;
+        document.getElementById('pg-temperature').value = _pg.temperature;
+        document.getElementById('pg-max-tokens').value = _pg.max_tokens;
+      }
+    } else {
+      hint.textContent = 'Goes to this provider only, with no fallback, so its errors show as they are.';
+    }
+
+    const list = document.getElementById('pg-model-list');
+    const modelInput = document.getElementById('pg-model');
+    list.innerHTML = '';
+    modelInput.placeholder = 'Provider default';
+    if (!info.provider) return;
+
+    const target = _pg.target;
+    if (!_pgModels[info.provider.id]) {
+      const res = await api(`/admin/playground/models?provider_id=${encodeURIComponent(info.provider.id)}`);
+      if (res.error) return;
+      _pgModels[info.provider.id] = res;
+    }
+    if (_pg.target !== target) return; // switched again while loading
+    const { default_model, models } = _pgModels[info.provider.id];
+    list.innerHTML = (models || []).map(m => `<option value="${h(m)}">`).join('');
+    if (default_model) modelInput.placeholder = `Default: ${default_model}`;
+  }
+
+  function pgSetTarget(value) {
+    _pg.target = value;
+    pgShowTarget(true);
+  }
+
+  function pgSet(key, value) { _pg[key] = value; }
+
+  function pgKey(e) {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+      e.preventDefault();
+      pgSend();
+    }
+  }
+
+  function pgSetBusy(busy) {
+    const btn = document.getElementById('pg-send');
+    if (!btn) return;
+    btn.textContent = busy ? 'Stop' : 'Send';
+    btn.className = busy ? 'btn btn-danger' : 'btn btn-primary';
+  }
+
+  function pgSecs(ms) {
+    if (ms == null) return '';
+    return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`;
+  }
+
+  function pgMeta(m) {
+    const d = m.meta;
+    const parts = [];
+    if (d) {
+      if (d.provider) parts.push(h(d.provider.name));
+      if (d.model) parts.push(`<span class="text-mono">${h(d.model)}</span>`);
+      parts.push(pgSecs(d.latency_ms));
+      if (d.ttft_ms != null) parts.push(`first token ${pgSecs(d.ttft_ms)}`);
+      if (d.usage && (d.usage.input_tokens || d.usage.output_tokens)) {
+        parts.push(`${num(d.usage.input_tokens)} in / ${num(d.usage.output_tokens)} out tokens`);
+      }
+      if (d.cost_cents > 0) parts.push(`$${(d.cost_cents / 100).toFixed(4)}`);
+      if (d.finish_reason && /length|max_tokens/i.test(d.finish_reason)) parts.push('cut off at max tokens');
+    }
+    if (m.stopped) parts.push('stopped');
+    const fallbacks = (d?.fallback_attempts || []).map(a =>
+      `<div class="pg-fallback">Skipped ${h(a.provider_name)} after ${pgSecs(a.latency_ms)}: ${h(a.error)}</div>`).join('');
+    return { line: parts.join(' · '), fallbacks };
+  }
+
+  function pgBubble(m, i) {
+    if (m.role === 'user') {
+      return `<div class="pg-msg pg-user"><div class="pg-text">${h(m.content)}</div></div>`;
+    }
+    const { line, fallbacks } = pgMeta(m);
+    const isLast = i === _pg.messages.length - 1;
+    const text = m.content || m.pending
+      ? `<div class="pg-text${m.content ? '' : ' pg-typing'}">${m.content ? h(m.content) : '…'}</div>`
+      : '';
+    const retry = isLast && !m.pending ? `<button class="pg-link" onclick="OS.pgRetry()">Retry</button>` : '';
+    return `<div class="pg-msg pg-assistant">
+      ${fallbacks}
+      ${text}
+      ${m.error ? `<div class="pg-error">${h(m.error)}</div>` : ''}
+      ${line || retry ? `<div class="pg-meta">${line ? `<span>${line}</span>` : ''}${retry}</div>` : ''}
+    </div>`;
+  }
+
+  function pgRenderTranscript() {
+    const el = document.getElementById('pg-transcript');
+    if (!el) return;
+    el.innerHTML = _pg.messages.length
+      ? _pg.messages.map(pgBubble).join('')
+      : '<div class="pg-empty">Pick where to send, then type a message. Each reply shows which provider and model answered, how long it took, and the tokens it used.</div>';
+    el.scrollTop = el.scrollHeight;
+  }
+
+  // Streaming updates touch only the last bubble's text
+  function pgUpdateLast(content) {
+    const el = document.getElementById('pg-transcript');
+    const text = el?.querySelector('.pg-msg:last-child .pg-text');
+    if (!text) return;
+    text.classList.remove('pg-typing');
+    text.textContent = content;
+    el.scrollTop = el.scrollHeight;
+  }
+
+  async function pgSend() {
+    if (_pg.busy) { _pg.abort?.abort(); return; }
+    const input = document.getElementById('pg-input');
+    const content = input.value.trim();
+    if (!content) return;
+    input.value = '';
+    _pg.messages.push({ role: 'user', content });
+    await pgRun();
+  }
+
+  async function pgRetry() {
+    if (_pg.busy) return;
+    if (_pg.messages[_pg.messages.length - 1]?.role === 'assistant') _pg.messages.pop();
+    if (_pg.messages.length) await pgRun();
+  }
+
+  function pgClear() {
+    _pg.abort?.abort();
+    _pg.messages = [];
+    pgRenderTranscript();
+  }
+
+  async function pgRun() {
+    const body = {
+      // Failed and empty replies stay on screen but are not sent back to the model
+      messages: _pg.messages.filter(m => !m.error && m.content).map(m => ({ role: m.role, content: m.content })),
+      system: _pg.system,
+      model: _pg.model.trim() || undefined,
+      stream: _pg.stream,
+    };
+    const [kind, id] = _pg.target.split(':');
+    if (kind === 'soul') body.soul_id = id;
+    if (kind === 'provider') body.provider_id = id;
+    if (_pg.temperature !== '') body.temperature = Number(_pg.temperature);
+    if (_pg.max_tokens !== '') body.max_tokens = parseInt(_pg.max_tokens, 10);
+
+    const reply = { role: 'assistant', content: '', pending: true };
+    _pg.messages.push(reply);
+    _pg.busy = true;
+    _pg.abort = new AbortController();
+    pgRenderTranscript();
+    pgSetBusy(true);
+
+    try {
+      const res = await fetch('/admin/playground/chat', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: _pg.abort.signal,
+      });
+      if (res.status === 401) { promptToken(); throw new Error('Session expired. Log in again.'); }
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error?.message || `HTTP ${res.status}`);
+      }
+      if (body.stream) {
+        await pgReadStream(res, reply);
+      } else {
+        const data = await res.json();
+        reply.content = data.content || '';
+        reply.meta = data;
+      }
+    } catch (err) {
+      if (err.name === 'AbortError') reply.stopped = true;
+      else reply.error = err.message;
+    } finally {
+      reply.pending = false;
+      _pg.busy = false;
+      _pg.abort = null;
+      pgRenderTranscript();
+      pgSetBusy(false);
+    }
+  }
+
+  async function pgReadStream(res, reply) {
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const events = buffer.split('\n\n');
+      buffer = events.pop();
+      for (const ev of events) {
+        if (!ev.startsWith('data: ')) continue;
+        const data = JSON.parse(ev.slice(6));
+        if (data.type === 'delta') {
+          reply.content += data.text;
+          pgUpdateLast(reply.content);
+        } else if (data.type === 'done') {
+          reply.meta = data;
+        } else if (data.type === 'error') {
+          throw new Error(data.message);
+        }
+      }
+    }
+  }
+
   // ===== Init =====
   async function init() {
     // Check server health
@@ -2681,5 +2984,6 @@ docker run -d -p 3700:3700 -v ./data:/app/data -v ./config:/app/config openhinge
     cfConnect, cfZoneChange,
     provFilter, provClearFilters, provToggle, provSelectAll, provSelectNone, provBulk,
     logFilter, logSort, logPage, logClearFilters, logDetail,
+    pgSetTarget, pgSet, pgKey, pgSend, pgRetry, pgClear,
   };
 })();

@@ -151,6 +151,19 @@ export function getDefaultProvider(): BaseProvider | undefined {
   return getAllProviders()[0];
 }
 
+/**
+ * Provider order for a request: the soul's provider, then its fallback chain,
+ * then the highest-priority provider as a last resort.
+ */
+export function providerChainFor(soul: { provider_id: string | null; fallback_chain: string[] } | null): string[] {
+  const ids: string[] = [];
+  if (soul?.provider_id) ids.push(soul.provider_id);
+  if (soul?.fallback_chain) ids.push(...soul.fallback_chain);
+  const defaultProvider = getDefaultProvider();
+  if (defaultProvider && !ids.includes(defaultProvider.id)) ids.push(defaultProvider.id);
+  return ids;
+}
+
 function getProviderHealth(id: string): string {
   const db = getDb();
   const row = db.prepare('SELECT health_status FROM providers WHERE id = ?').get(id) as { health_status: string } | undefined;

@@ -893,3 +893,29 @@ code {
   to { opacity: 1; transform: translateY(0); }
 }
 .welcome-card { animation: welcomeFadeIn 0.3s ease-out; }
+
+/* ===== Playground ===== */
+.pg-layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 16px; align-items: start; }
+.pg-settings textarea { min-height: 90px; }
+.pg-check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-secondary); cursor: pointer; }
+.pg-check input { width: auto; }
+.pg-chat { display: flex; flex-direction: column; padding: 0; height: calc(100vh - var(--topbar-height) - 140px); min-height: 420px; }
+.pg-transcript { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+.pg-empty { margin: auto; max-width: 380px; text-align: center; color: var(--text-muted); font-size: 13px; }
+.pg-msg { max-width: 85%; display: flex; flex-direction: column; gap: 4px; }
+.pg-user { align-self: flex-end; align-items: flex-end; }
+.pg-assistant { align-self: flex-start; }
+.pg-text { padding: 10px 14px; border-radius: var(--radius-lg); background: var(--bg-muted); border: 1px solid var(--border); white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; }
+.pg-user .pg-text { background: var(--primary-muted); border-color: rgba(99, 102, 241, 0.3); }
+.pg-typing { color: var(--text-muted); }
+.pg-meta { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; padding: 0 4px; font-size: 11px; color: var(--text-muted); }
+.pg-error { padding: 8px 12px; border-radius: var(--radius); background: var(--destructive-muted); color: var(--destructive); font-family: var(--font-mono); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.pg-fallback { padding: 0 4px; font-size: 11px; color: var(--warning); overflow-wrap: anywhere; }
+.pg-composer { display: flex; gap: 8px; align-items: flex-end; padding: 12px; border-top: 1px solid var(--border); }
+.pg-composer textarea { min-height: 44px; max-height: 200px; resize: none; }
+.pg-link { background: none; border: 0; padding: 0; color: var(--text-muted); font: inherit; text-decoration: underline; cursor: pointer; }
+.pg-link:hover { color: var(--text); }
+@media (max-width: 960px) {
+  .pg-layout { grid-template-columns: 1fr; }
+  .pg-chat { height: 70vh; }
+}
