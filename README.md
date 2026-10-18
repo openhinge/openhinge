@@ -16,6 +16,7 @@ Use your own subscriptions (Claude Pro, ChatGPT Plus, Gemini) and API keys. Cont
 - **API key management** — `ohk_` prefixed keys with rate limits, soul binding, budget controls, and expiry.
 - **Request logging** — Every request logged with tokens, latency, cost. Searchable, filterable, paginated.
 - **Dashboard** — Web UI for managing providers, souls, keys, logs, and settings.
+- **Playground** — Chat with any provider or soul from the dashboard to try models and prompts. Each reply shows the provider and model that answered, latency, time to first token, token counts, and any fallbacks.
 - **Fallback routing** — Providers have priority. If one fails, the next healthy provider handles the request.
 - **Health monitoring** — Per-provider health checks that don't consume generation quota.
 - **Background token refresh** — OAuth tokens refreshed every 15 min automatically.

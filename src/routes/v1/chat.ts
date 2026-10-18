@@ -3,7 +3,7 @@ import { authMiddleware } from '../../middleware/auth.js';
 import { rateLimitMiddleware } from '../../middleware/rate-limit.js';
 import { budgetCheckMiddleware } from '../../middleware/budget-check.js';
 import { getSoulBySlug, getSoulById } from '../../souls/repository.js';
-import { getProvider, getDefaultProvider, chatWithFallback, streamWithFallback } from '../../providers/index.js';
+import { getProvider, providerChainFor, chatWithFallback, streamWithFallback } from '../../providers/index.js';
 import { logUsage } from '../../cost/index.js';
 import { calculateCostCents } from '../../utils/tokens.js';
 import { generateId } from '../../utils/crypto.js';
@@ -127,13 +127,7 @@ async function handleChat(request: FastifyRequest<{ Params?: { slug?: string }; 
   messages.push(...body.messages);
 
   // Build provider chain
-  const providerIds: string[] = [];
-  if (soul?.provider_id) providerIds.push(soul.provider_id);
-  if (soul?.fallback_chain) providerIds.push(...soul.fallback_chain);
-  const defaultProvider = getDefaultProvider();
-  if (defaultProvider && !providerIds.includes(defaultProvider.id)) {
-    providerIds.push(defaultProvider.id);
-  }
+  const providerIds = providerChainFor(soul);
 
   if (providerIds.length === 0) {
     throw new OpenHingeError('No providers configured', 503, 'NO_PROVIDERS');
